@@ -1,6 +1,6 @@
 # Data Ingestion System — Phase I
 
-A modular, automated pipeline for scraping, cleaning, and storing user reviews from Trustpilot into a relational database for downstream sentiment analysis.
+A modular, automated pipeline for scraping, cleaning, and storing app reviews from Google Play Store into a relational database for downstream sentiment analysis.
 
 ---
 
@@ -9,7 +9,8 @@ A modular, automated pipeline for scraping, cleaning, and storing user reviews f
 ```
 data_ingestion/
 ├── scraper/             # Data acquisition layer
-│   └── trustpilot_scraper.py
+│   ├── play_scraper.py
+│   └── amazon_scraper.py  # archived - Amazon blocks unauthenticated scraping
 ├── database/            # Storage layer
 │   └── db.py
 ├── pipeline/            # Transformation layer
@@ -37,37 +38,43 @@ pip install -r requirements.txt
 
 ## Usage
 
-### Scrape a single company
+### Scrape a single app
 ```bash
-python main.py --companies www.amazon.com --pages 10 --export
+python main.py --apps amazon --count 10000 --export
 ```
 
-### Scrape multiple companies
+### Scrape multiple apps
 ```bash
-python main.py --companies www.amazon.com www.ebay.com www.walmart.com --pages 10 --export
+python main.py --apps amazon ebay walmart --count 10000 --export
 ```
 
 ### Arguments
 
 | Argument | Default | Description |
 |---|---|---|
-| `--companies` | `www.amazon.com` | One or more Trustpilot company slugs |
-| `--pages` | `5` | Number of review pages to scrape per company |
+| `--apps` | `amazon` | One or more app keys to scrape |
+| `--count` | `10000` | Number of reviews to fetch per app |
 | `--export` | `False` | Export results to CSV in `/exports` |
 
-> **Note:** Trustpilot limits unauthenticated access to 10 pages (200 reviews) per company.
+### Supported Apps
+
+| Key | App | Package ID |
+|---|---|---|
+| `amazon` | Amazon Shopping | `com.amazon.mShop.android.shopping` |
+| `ebay` | eBay | `com.ebay.mobile` |
+| `walmart` | Walmart | `com.walmart.android` |
 
 ---
 
 ## Pipeline Overview
 
 ```
-Scrape (Trustpilot) → Clean & Normalize → Store (SQLite) → Export (CSV)
+Scrape (Google Play) → Clean & Normalize → Store (SQLite) → Export (CSV)
 ```
 
-1. **Scraper** — fetches paginated reviews using Requests and BeautifulSoup
+1. **Scraper** — fetches reviews from Google Play Store using `google-play-scraper`, with pagination support via continuation tokens
 2. **Cleaner** — strips whitespace, normalizes dates to YYYY-MM-DD, validates ratings
-3. **Database** — stores in a relational schema with duplicate prevention via MD5 hash
+3. **Database** — stores in a relational schema with duplicate prevention via `review_id` and MD5 hash fallback
 4. **Exporter** — saves timestamped CSV backups to `/exports` for downstream use
 5. **Logger** — writes timestamped logs to `/logs` for every pipeline run
 
@@ -80,8 +87,8 @@ Scrape (Trustpilot) → Clean & Normalize → Store (SQLite) → Export (CSV)
 | Column | Type | Description |
 |---|---|---|
 | id | INTEGER | Primary key |
-| name | TEXT | Company display name |
-| slug | TEXT | Trustpilot URL slug (unique) |
+| name | TEXT | App display name |
+| slug | TEXT | Google Play package ID (unique) |
 | created_at | TEXT | Record creation timestamp |
 
 ### `reviews`
@@ -90,33 +97,36 @@ Scrape (Trustpilot) → Clean & Normalize → Store (SQLite) → Export (CSV)
 |---|---|---|
 | id | INTEGER | Primary key |
 | company_id | INTEGER | Foreign key → companies.id |
+| review_id | TEXT | Google Play review ID (unique) |
 | reviewer_name | TEXT | Name of the reviewer |
 | rating | INTEGER | Star rating (1–5) |
 | title | TEXT | Review title |
 | body | TEXT | Review body text |
 | review_date | TEXT | Date of review (YYYY-MM-DD) |
+| thumbs_up | INTEGER | Number of helpful votes |
+| app_version | TEXT | App version reviewed on |
 | scraped_at | TEXT | Timestamp when record was scraped |
-| review_hash | TEXT | MD5 hash for deduplication (unique) |
+| review_hash | TEXT | MD5 hash for deduplication fallback |
 
 ---
 
-## Adding a New Company
+## Adding a New App
 
-Add the company slug to the `COMPANIES` dict in `main.py`:
+Add the app to the `APPS` dict in `main.py`:
 
 ```python
-COMPANIES = {
-    "www.amazon.com":  "Amazon",
-    "www.ebay.com":    "eBay",
-    "www.walmart.com": "Walmart",
-    "www.yourcompany.com": "Your Company",  # add here
+APPS = {
+    "amazon":  ("com.amazon.mShop.android.shopping", "Amazon"),
+    "ebay":    ("com.ebay.mobile", "eBay"),
+    "walmart": ("com.walmart.android", "Walmart"),
+    "yourapp": ("com.your.app.package", "Your App"),  # add here
 }
 ```
 
 Then run:
 
 ```bash
-python main.py --companies www.yourcompany.com --pages 10 --export
+python main.py --apps yourapp --count 10000 --export
 ```
 
 ---
@@ -126,7 +136,7 @@ python main.py --companies www.yourcompany.com --pages 10 --export
 | File | Location | Description |
 |---|---|---|
 | Database | `reviews.db` | SQLite database with all scraped reviews |
-| CSV export | `exports/{slug}_{timestamp}.csv` | Per-run CSV backup |
+| CSV export | `exports/{app}_{timestamp}.csv` | Per-run CSV backup |
 | Log file | `logs/pipeline_{timestamp}.log` | Per-run execution log |
 
 ---
@@ -136,4 +146,5 @@ python main.py --companies www.yourcompany.com --pages 10 --export
 ```
 requests
 beautifulsoup4
+google-play-scraper
 ```
