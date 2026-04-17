@@ -1,6 +1,6 @@
 # Feature Engineering Pipeline: Research and Design Plan
 
-**Author:** Shawn Nguyen  
+**Author:** Xuan Bai 
 **Date:** April 2026  
 **Project:** Data Ingestion System, Phase II
 

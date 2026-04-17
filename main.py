@@ -4,6 +4,8 @@ from database.db import create_tables, get_or_create_company, insert_reviews, ve
 from pipeline.cleaner import clean_reviews
 from pipeline.exporter import export_to_csv
 from pipeline.logger import setup_logger
+from pipeline.feature_engineering import run_pipeline, validate_features
+
 
 # App package names from Google Play
 APPS = {
@@ -50,10 +52,16 @@ if __name__ == "__main__":
         company_id = get_or_create_company(app_name, app_id)
         insert_reviews(company_id, cleaned)
 
+        # Feature engineering
+        logger.info("Running feature engineering...")
+        featured = run_pipeline(cleaned, n_clusters=10)
+        validate_features(featured)
+
         # Export
         if args.export:
             logger.info("Exporting to CSV...")
             export_to_csv(cleaned, app_key)
+            export_to_csv(featured, f"{app_key}_features")
 
         logger.info(f"Finished {app_name}.")
 
