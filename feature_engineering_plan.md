@@ -126,14 +126,36 @@ Manually inspect 5-10 reviews from each cluster and verify they share a coherent
 This is a first prototype, not a production system. Known limitations:
 
 - Aspect extraction relies on noun phrases which can include noise (e.g., "I", "it"). Filtering will be applied but not exhaustively tuned.
+- Brand names (e.g., "amazon") surface as top aspects in both positives and negatives because users mention the brand in almost any review. This is noise, not signal — a future iteration should add a per-app brand stopword list.
 - Clustering requires a fixed number of clusters (K) chosen manually. Optimal K will be estimated but not rigorously validated.
 - Embeddings are computed per review independently with no cross-review context.
+- Theme clusters dominated by very short reviews (e.g., "Good", "great") produce weak representative examples even after dedupe. The cluster label (top aspects) remains informative.
 
 These are acceptable tradeoffs for a prototype. A future iteration could address them with more sophisticated NLP models (e.g., fine-tuned BERT for aspect extraction) and automated cluster selection (e.g., elbow method).
 
 ---
 
-## 7. Next Steps
+## 7. Extensions (v2)
+
+After the v1 prototype validated polarity, aspects, and clustering as meaningful signals, three additional features were layered on to make the pipeline output more actionable:
+
+### 7.1 Emotion Classification
+**What:** Each review is classified into one dominant emotion (anger, disgust, fear, joy, neutral, sadness, surprise) using `j-hartmann/emotion-english-distilroberta-base`.
+**Why:** Polarity tells us *how* negative a review is; emotion tells us *what kind* of negative it is. Anger-heavy feedback signals churn risk; sadness-heavy feedback signals disappointment with a specific feature; fear-heavy feedback often indicates trust/security concerns. These are different operational responses.
+
+### 7.2 Urgency / Actionability Score
+**What:** A heuristic 0-1 score combining bug-related keywords, low rating, low subjectivity, aspect specificity, and review length. Not ML — intentionally interpretable.
+**Why:** Sentiment alone does not tell a product team what to do first. A 5-item score lets us surface the most actionable bug reports above generic emotional complaints, directly answering "what should we look at this sprint?"
+
+### 7.3 Named Entity Recognition
+**What:** spaCy extracts `ORG` and `PRODUCT` entities from each review, with the host brand filtered out.
+**Why:** Surfaces competitor mentions ("switched to Target", "ebay is better") and specific product references that aspect extraction alone misses. Useful for competitive-intelligence and product-manager signal.
+
+All three features plug into the existing `run_pipeline` and the summarizer generates a dedicated section for each.
+
+---
+
+## 8. Next Steps
 
 1. Implement `pipeline/feature_engineering.py` with the four modules above
 2. Run on the existing 10k Amazon reviews

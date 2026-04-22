@@ -1,2 +1,9 @@
 requests
 beautifulsoup4
+google-play-scraper
+textblob
+spacy
+sentence-transformers
+transformers
+scikit-learn
+numpy

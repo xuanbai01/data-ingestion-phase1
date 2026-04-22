@@ -4,3 +4,4 @@ reviews.db
 logs/
 exports/
 .env
+.claude
