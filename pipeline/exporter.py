@@ -27,8 +27,8 @@ def load_cleaned_csv(path):
     return reviews
 
 
-def export_to_csv(reviews, company_slug):
-    """Export reviews to a timestamped CSV file."""
+def export_to_csv(reviews, company_slug, exclude=()):
+    """Export reviews to a timestamped CSV file, optionally dropping columns."""
     os.makedirs(EXPORT_DIR, exist_ok=True)
 
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
@@ -38,8 +38,11 @@ def export_to_csv(reviews, company_slug):
         print("No reviews to export.")
         return
 
+    exclude = set(exclude)
+    fieldnames = [k for k in reviews[0].keys() if k not in exclude]
+
     with open(filename, "w", newline="", encoding="utf-8-sig") as f:
-        writer = csv.DictWriter(f, fieldnames=reviews[0].keys())
+        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(reviews)
 

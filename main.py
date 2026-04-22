@@ -73,7 +73,9 @@ if __name__ == "__main__":
             logger.info("Exporting to CSV...")
             if not args.from_csv:
                 export_to_csv(cleaned, app_key)
-            export_to_csv(featured, f"{app_key}_features")
+            # Drop embedding column — 384 floats per row makes the CSV huge
+            # and unreadable, and clustering has already consumed it.
+            export_to_csv(featured, f"{app_key}_features", exclude=["embedding"])
 
         logger.info(f"Finished {app_name}.")
 
