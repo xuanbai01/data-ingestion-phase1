@@ -119,15 +119,19 @@ Design rationale and validation criteria are documented in [feature_engineering_
 
 ### Summary Report
 
-Every run writes a markdown report to `reports/{app}_{timestamp}.md` with:
+Every run writes a markdown report to `reports/{app}_{timestamp}.md`. The report is organized around **issues** — negative-leaning theme clusters, ranked and broken down so the reader can act on them:
 
 - **Overall Sentiment** — avg rating, avg polarity, % positive/negative, objective-vs-subjective negative split
-- **Emotion Distribution** — counts per dominant emotion
-- **Top Issues** — most mentioned aspects in 1–2 star reviews (with avg polarity & rating)
-- **Top Positives** — most mentioned aspects in 4–5 star reviews
-- **Most Urgent Reviews** — top 10 reviews ranked by urgency score
+- **Priority Issues** — leaderboard of the top negative clusters ranked by a composite score (volume × severity × urgency × intense-emotion share). Each top issue gets its own card with:
+  - Distinctive aspects (TF-IDF over the corpus, not raw frequency)
+  - Bug-vs-complaint split (objective vs subjective subset, with each side's top aspects)
+  - Top emotions and mentioned entities (competitors / products) within the cluster
+  - Representative reviews (closest to centroid, deduped)
+- **Top Positives** — clusters that skew positive, kept brief
+- **Most Urgent Reviews** — top 10 reviews by urgency score (cross-cluster, complementary view)
+- **Emotion Distribution** — global counts per dominant emotion
 - **Mentioned Entities** — ORG / PRODUCT entities, brand-filtered
-- **Themes** — each auto-discovered cluster with top aspects, stats, and representative reviews
+- **Aspect Index** — top 1–2★ aspects mapped to the priority issue they primarily belong to (drill-down lookup)
 
 ### Extending the Feature Set
 

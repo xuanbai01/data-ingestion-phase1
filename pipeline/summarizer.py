@@ -2,10 +2,12 @@
 Summarizer: consumes feature-engineered reviews and produces a human-readable
 markdown report plus a short terminal summary.
 
-Each markdown section is built by its own small function so that new feature
-columns (e.g. emotion, urgency) can add a section without touching the others.
+The report is organized around "issues" — negative-leaning theme clusters
+ranked by a composite priority score. Aspects, subjectivity, and emotion
+appear as drill-down inside each issue rather than as parallel sections.
 """
 import os
+import math
 from collections import Counter, defaultdict
 from datetime import datetime
 import numpy as np
@@ -16,20 +18,43 @@ NEG_THRESHOLD = -0.1
 POS_THRESHOLD = 0.1
 SUBJECTIVE_THRESHOLD = 0.5
 
+# A cluster qualifies as an "issue" if it skews negative on either rating or polarity.
+ISSUE_RATING_CEILING = 3.0
+ISSUE_POLARITY_CEILING = -0.05
+
+# Priority score weights (sum to 1.0). Volume + severity dominate;
+# urgency and emotion intensity sharpen the ranking among similar-volume clusters.
+W_VOLUME = 0.30
+W_SEVERITY = 0.30
+W_URGENCY = 0.25
+W_EMOTION = 0.15
+
+INTENSE_EMOTIONS = {"anger", "disgust", "fear"}
+
+TOP_ISSUES_N = 5
+TOP_POSITIVES_N = 5
+
+# TF-IDF aspect labels are unstable on tiny clusters; fall back to raw frequency.
+TFIDF_MIN_CLUSTER_SIZE = 20
+
 
 def generate_report(reviews, app_name, write_file=True):
     """Build the full markdown report, write to file, and print a terminal summary."""
+    issues = _score_issues(reviews)
+    corpus_df = _aspect_doc_freq(reviews)
+
     sections = [
         _header(reviews, app_name),
         _overall_sentiment(reviews),
-        _emotion_section(reviews),
-        _top_aspects_tables(reviews),
+        _priority_issues_section(reviews, issues, corpus_df),
+        _top_positives_section(reviews, corpus_df),
         _urgent_issues_section(reviews),
+        _emotion_section(reviews),
         _entities_section(reviews),
-        _themes_section(reviews),
-        _feature_summary(reviews),
+        _aspect_index_section(reviews, issues),
+        _feature_summary(reviews, issues),
     ]
-    report = "\n\n".join(sections) + "\n"
+    report = "\n\n".join(s for s in sections if s) + "\n"
 
     if write_file:
         os.makedirs(REPORT_DIR, exist_ok=True)
@@ -39,9 +64,13 @@ def generate_report(reviews, app_name, write_file=True):
             f.write(report)
         print(f"Wrote report to {path}")
 
-    _print_terminal_summary(reviews, app_name)
+    _print_terminal_summary(reviews, app_name, issues)
     return report
 
+
+# ---------------------------------------------------------------------------
+# Header + overall sentiment
+# ---------------------------------------------------------------------------
 
 def _header(reviews, app_name):
     date = datetime.utcnow().strftime("%Y-%m-%d")
@@ -77,51 +106,288 @@ def _overall_sentiment(reviews):
     return "## Overall Sentiment\n" + body
 
 
-def _aspect_stats(reviews_subset):
-    """Aggregate per-aspect: count, polarities, ratings."""
-    stats = defaultdict(lambda: {"count": 0, "polarity": [], "rating": []})
-    for r in reviews_subset:
-        for a in r.get("aspects") or []:
-            stats[a]["count"] += 1
-            if r.get("polarity") is not None:
-                stats[a]["polarity"].append(r["polarity"])
-            if r.get("rating") is not None:
-                stats[a]["rating"].append(r["rating"])
-    return stats
+# ---------------------------------------------------------------------------
+# Issue scoring
+# ---------------------------------------------------------------------------
+
+def _cluster_groups(reviews):
+    groups = defaultdict(list)
+    for r in reviews:
+        cid = r.get("theme_cluster")
+        if cid is not None:
+            groups[cid].append(r)
+    return groups
 
 
-def _format_aspect_table(reviews_subset, top_n=10, min_count=5):
-    stats = _aspect_stats(reviews_subset)
-    rows = []
-    for aspect, s in stats.items():
-        if s["count"] < min_count:
+def _score_issues(reviews):
+    """
+    Return a list of issue dicts (one per negative-leaning cluster), sorted by
+    composite priority score (desc). Each entry includes the cluster id, its
+    reviews, the score, and the four normalized component scores.
+    """
+    groups = _cluster_groups(reviews)
+    if not groups:
+        return []
+
+    max_count = max(len(g) for g in groups.values())
+
+    scored = []
+    for cid, group in groups.items():
+        ratings = [r["rating"] for r in group if r.get("rating") is not None]
+        polarities = [r["polarity"] for r in group if r.get("polarity") is not None]
+        avg_rating = float(np.mean(ratings)) if ratings else 0.0
+        avg_pol = float(np.mean(polarities)) if polarities else 0.0
+
+        is_issue = (
+            (ratings and avg_rating < ISSUE_RATING_CEILING)
+            or (polarities and avg_pol < ISSUE_POLARITY_CEILING)
+        )
+        if not is_issue:
             continue
-        avg_pol = np.mean(s["polarity"]) if s["polarity"] else 0.0
-        avg_rating = np.mean(s["rating"]) if s["rating"] else 0.0
-        rows.append((aspect, s["count"], avg_pol, avg_rating))
-    rows.sort(key=lambda r: -r[1])
-    rows = rows[:top_n]
 
-    if not rows:
-        return "_No aspects met the minimum count threshold._"
+        urgencies = [r["urgency"] for r in group if r.get("urgency") is not None]
+        avg_urgency = float(np.mean(urgencies)) if urgencies else 0.0
 
-    body = "| Aspect | Mentions | Avg polarity | Avg rating |\n|---|---:|---:|---:|\n"
-    body += "\n".join(
-        f"| {a} | {c} | {p:.2f} | {r:.1f} |" for a, c, p, r in rows
+        emotions = [r.get("emotion") for r in group if r.get("emotion")]
+        intense = sum(1 for e in emotions if e in INTENSE_EMOTIONS)
+        emotion_intensity = intense / len(emotions) if emotions else 0.0
+
+        volume_score = math.log1p(len(group)) / math.log1p(max_count) if max_count else 0.0
+        if ratings:
+            severity_score = max(0.0, min(1.0, 1.0 - (avg_rating - 1.0) / 4.0))
+        else:
+            severity_score = 0.5
+
+        priority = (
+            W_VOLUME * volume_score
+            + W_SEVERITY * severity_score
+            + W_URGENCY * avg_urgency
+            + W_EMOTION * emotion_intensity
+        )
+
+        scored.append({
+            "cluster_id": cid,
+            "reviews": group,
+            "score": round(priority, 3),
+            "count": len(group),
+            "avg_rating": avg_rating,
+            "avg_polarity": avg_pol,
+            "avg_urgency": avg_urgency,
+            "emotion_intensity": emotion_intensity,
+            "components": {
+                "volume": round(volume_score, 3),
+                "severity": round(severity_score, 3),
+                "urgency": round(avg_urgency, 3),
+                "emotion": round(emotion_intensity, 3),
+            },
+        })
+
+    scored.sort(key=lambda x: -x["score"])
+    return scored
+
+
+# ---------------------------------------------------------------------------
+# Aspect ranking (TF-IDF style distinctiveness)
+# ---------------------------------------------------------------------------
+
+def _aspect_doc_freq(reviews):
+    df = Counter()
+    for r in reviews:
+        for a in set(r.get("aspects") or []):
+            df[a] += 1
+    return df
+
+
+def _distinctive_aspects(cluster_reviews, corpus_df, total_reviews, k=4, min_count=3):
+    """
+    Return the k aspects most distinctive to this cluster, scored by
+    cluster_count * log(total_reviews / corpus_df). Falls back to raw frequency
+    on small clusters where the IDF term is unstable.
+    """
+    cluster_count = Counter()
+    for r in cluster_reviews:
+        for a in set(r.get("aspects") or []):
+            cluster_count[a] += 1
+
+    if not cluster_count:
+        return []
+
+    if len(cluster_reviews) < TFIDF_MIN_CLUSTER_SIZE:
+        return [a for a, _ in cluster_count.most_common(k)]
+
+    scored = []
+    for aspect, count in cluster_count.items():
+        if count < min_count:
+            continue
+        df = corpus_df.get(aspect, 1)
+        idf = math.log(total_reviews / df) if df else 0.0
+        scored.append((aspect, count * idf))
+    scored.sort(key=lambda x: -x[1])
+    distinctive = [a for a, _ in scored[:k]]
+    return distinctive or [a for a, _ in cluster_count.most_common(k)]
+
+
+def _subjectivity_split(cluster_reviews):
+    """Partition reviews into objective (bug-like) and subjective (complaint-like)."""
+    objective, subjective = [], []
+    for r in cluster_reviews:
+        s = r.get("subjectivity")
+        if s is None:
+            continue
+        if s < SUBJECTIVE_THRESHOLD:
+            objective.append(r)
+        else:
+            subjective.append(r)
+    return objective, subjective
+
+
+# ---------------------------------------------------------------------------
+# Priority Issues section (leaderboard + cards)
+# ---------------------------------------------------------------------------
+
+def _priority_issues_section(reviews, issues, corpus_df):
+    if not issues:
+        return "## Priority Issues\n_No negative-leaning clusters detected._"
+
+    total = len(reviews)
+    top = issues[:TOP_ISSUES_N]
+
+    lines = [
+        "## Priority Issues",
+        "Negative-leaning clusters ranked by composite priority — "
+        "weighted by volume, severity (avg rating), urgency, and "
+        "intense-emotion share (anger / disgust / fear).",
+        "",
+        "| # | Issue | Reviews | Avg rating | Bug / Complaint | Priority |",
+        "|---:|---|---:|---:|---|---:|",
+    ]
+    for i, issue in enumerate(top, 1):
+        cluster = issue["reviews"]
+        label = ", ".join(_distinctive_aspects(cluster, corpus_df, total, k=3)) or "—"
+        obj, subj = _subjectivity_split(cluster)
+        denom = len(obj) + len(subj)
+        if denom:
+            obj_pct = len(obj) / denom
+            subj_pct = len(subj) / denom
+            split = f"{obj_pct:.0%} / {subj_pct:.0%}"
+        else:
+            split = "—"
+        lines.append(
+            f"| {i} | {label} | {issue['count']} | "
+            f"{issue['avg_rating']:.1f} | {split} | {issue['score']:.2f} |"
+        )
+    lines.append("")
+
+    for i, issue in enumerate(top, 1):
+        lines.append(_issue_card(issue, i, corpus_df, total))
+        lines.append("")
+
+    return "\n".join(lines).rstrip()
+
+
+def _issue_card(issue, rank, corpus_df, total_reviews):
+    cluster = issue["reviews"]
+    label_aspects = _distinctive_aspects(cluster, corpus_df, total_reviews, k=4)
+    label = ", ".join(label_aspects) if label_aspects else "no clear aspects"
+
+    obj, subj = _subjectivity_split(cluster)
+    denom = len(obj) + len(subj)
+    obj_share = len(obj) / denom if denom else 0.0
+    subj_share = len(subj) / denom if denom else 0.0
+
+    obj_aspects = _distinctive_aspects(obj, corpus_df, total_reviews, k=4) if obj else []
+    subj_aspects = _distinctive_aspects(subj, corpus_df, total_reviews, k=4) if subj else []
+
+    emotions = [r.get("emotion") for r in cluster if r.get("emotion")]
+    if emotions:
+        ec = Counter(emotions)
+        emotion_str = ", ".join(
+            f"{e} {c / len(emotions):.0%}" for e, c in ec.most_common(3)
+        )
+    else:
+        emotion_str = "—"
+
+    entity_counter = Counter()
+    entity_display = {}
+    for r in cluster:
+        for ent in r.get("entities") or []:
+            key = ent["text"].lower()
+            entity_counter[key] += 1
+            entity_display.setdefault(key, ent["text"])
+    top_entities = [
+        (entity_display[k], c)
+        for k, c in entity_counter.most_common(5)
+        if c >= 3
+    ]
+    entity_str = (
+        ", ".join(f"{name} ({c})" for name, c in top_entities)
+        if top_entities else "—"
     )
-    return body
+
+    samples = _representative_reviews(cluster, n=3)
+
+    lines = [
+        f"### Issue {rank} — {label}  (priority {issue['score']:.2f})",
+        f"**{issue['count']:,} reviews** · avg rating {issue['avg_rating']:.1f} "
+        f"· avg urgency {issue['avg_urgency']:.2f}",
+        "",
+        "| Side | Share | Top aspects |",
+        "|---|---:|---|",
+        f"| Objective (bugs) | {obj_share:.0%} | {', '.join(obj_aspects) or '—'} |",
+        f"| Subjective (complaints) | {subj_share:.0%} | {', '.join(subj_aspects) or '—'} |",
+        "",
+        f"**Top emotions:** {emotion_str}",
+        f"**Mentioned entities:** {entity_str}",
+        "",
+        "Representative reviews:",
+    ]
+    if samples:
+        for s in samples:
+            lines.append(f"- {s}")
+    else:
+        lines.append("- _No representative reviews available._")
+    return "\n".join(lines)
 
 
-def _top_aspects_tables(reviews):
-    neg_subset = [r for r in reviews if r.get("rating") in (1, 2)]
-    pos_subset = [r for r in reviews if r.get("rating") in (4, 5)]
+# ---------------------------------------------------------------------------
+# Positives, urgency, emotion, entities, aspect index
+# ---------------------------------------------------------------------------
 
-    return (
-        "## Top Issues (1-2 star reviews)\n"
-        + _format_aspect_table(neg_subset)
-        + "\n\n## Top Positives (4-5 star reviews)\n"
-        + _format_aspect_table(pos_subset)
-    )
+def _top_positives_section(reviews, corpus_df):
+    """Smaller positives view — clusters that skew positive, with distinctive aspects."""
+    groups = _cluster_groups(reviews)
+    if not groups:
+        return ""
+
+    total = len(reviews)
+    positives = []
+    for cid, group in groups.items():
+        ratings = [r["rating"] for r in group if r.get("rating") is not None]
+        if not ratings:
+            continue
+        avg_rating = float(np.mean(ratings))
+        if avg_rating < 4.0:
+            continue
+        positives.append((cid, group, avg_rating))
+
+    if not positives:
+        return "## Top Positives\n_No strongly positive clusters detected._"
+
+    positives.sort(key=lambda x: -len(x[1]))
+    positives = positives[:TOP_POSITIVES_N]
+
+    lines = [
+        "## Top Positives",
+        "Clusters where users express satisfaction — useful for "
+        "marketing and identifying what to preserve.",
+        "",
+        "| Cluster | Top aspects | Reviews | Avg rating |",
+        "|---|---|---:|---:|",
+    ]
+    for cid, group, avg_rating in positives:
+        label = ", ".join(_distinctive_aspects(group, corpus_df, total, k=3)) or "—"
+        lines.append(f"| {cid} | {label} | {len(group)} | {avg_rating:.1f} |")
+    return "\n".join(lines)
 
 
 def _representative_reviews(cluster_reviews, n=3, max_len=140):
@@ -146,39 +412,6 @@ def _representative_reviews(cluster_reviews, n=3, max_len=140):
         if len(picked) == n:
             break
     return picked
-
-
-def _themes_section(reviews):
-    clusters = defaultdict(list)
-    for r in reviews:
-        cid = r.get("theme_cluster")
-        if cid is not None:
-            clusters[cid].append(r)
-
-    lines = ["## Themes (auto-clustered)"]
-    sorted_ids = sorted(clusters.keys(), key=lambda c: -len(clusters[c]))
-    for cid in sorted_ids:
-        group = clusters[cid]
-        aspect_counter = Counter(
-            a for r in group for a in (r.get("aspects") or [])
-        )
-        top_aspects = [a for a, _ in aspect_counter.most_common(4)]
-        label = ", ".join(top_aspects) if top_aspects else "no aspects"
-
-        ratings = [r["rating"] for r in group if r.get("rating") is not None]
-        avg_rating = np.mean(ratings) if ratings else 0.0
-        pols = [r["polarity"] for r in group if r.get("polarity") is not None]
-        avg_pol = np.mean(pols) if pols else 0.0
-
-        lines.append(
-            f"### Theme {cid} — top aspects: {label} "
-            f"({len(group)} reviews, avg rating {avg_rating:.1f}, avg polarity {avg_pol:.2f})"
-        )
-        lines.append("Representative reviews:")
-        for sample in _representative_reviews(group):
-            lines.append(f"- {sample}")
-        lines.append("")
-    return "\n".join(lines).rstrip()
 
 
 def _emotion_section(reviews):
@@ -237,7 +470,53 @@ def _entities_section(reviews, top_n=10, min_count=3):
     return "## Mentioned Entities (companies & products)\n" + body
 
 
-def _feature_summary(reviews):
+def _aspect_index_section(reviews, issues):
+    """Map top 1-2★ aspects to the priority issue they primarily belong to."""
+    if not issues:
+        return ""
+
+    aspect_cluster_counts = defaultdict(Counter)
+    for r in reviews:
+        cid = r.get("theme_cluster")
+        if cid is None:
+            continue
+        for a in set(r.get("aspects") or []):
+            aspect_cluster_counts[a][cid] += 1
+
+    neg_aspect_count = Counter()
+    for r in reviews:
+        if r.get("rating") in (1, 2):
+            for a in r.get("aspects") or []:
+                neg_aspect_count[a] += 1
+
+    top_aspects = [a for a, c in neg_aspect_count.most_common(15) if c >= 5]
+    if not top_aspects:
+        return ""
+
+    cid_to_rank = {issue["cluster_id"]: i for i, issue in enumerate(issues, 1)}
+
+    lines = [
+        "## Aspect Index",
+        "Top aspects from 1–2★ reviews and the priority issue they "
+        "most belong to. Use this to look up which issue covers a "
+        "specific feature complaint.",
+        "",
+        "| Aspect | Mentions in 1–2★ | Primary issue |",
+        "|---|---:|---|",
+    ]
+    for aspect in top_aspects:
+        cluster_counts = aspect_cluster_counts.get(aspect, Counter())
+        if not cluster_counts:
+            primary = "—"
+        else:
+            top_cid, _ = cluster_counts.most_common(1)[0]
+            rank = cid_to_rank.get(top_cid)
+            primary = f"Issue {rank}" if rank else f"cluster {top_cid} (not in top issues)"
+        lines.append(f"| {aspect} | {neg_aspect_count[aspect]} | {primary} |")
+    return "\n".join(lines)
+
+
+def _feature_summary(reviews, issues):
     n = len(reviews)
     unique_aspects = len({a for r in reviews for a in (r.get("aspects") or [])})
     themes = len({r.get("theme_cluster") for r in reviews if r.get("theme_cluster") is not None})
@@ -245,11 +524,12 @@ def _feature_summary(reviews):
         "## Feature Summary\n"
         f"- {n:,} reviews processed\n"
         f"- {unique_aspects:,} unique aspects extracted\n"
-        f"- {themes} themes discovered"
+        f"- {themes} themes discovered\n"
+        f"- {len(issues)} negative-leaning issues identified"
     )
 
 
-def _print_terminal_summary(reviews, app_name):
+def _print_terminal_summary(reviews, app_name, issues):
     n = len(reviews)
     with_pol = [r for r in reviews if r.get("polarity") is not None]
     avg_pol = np.mean([r["polarity"] for r in with_pol]) if with_pol else 0.0
@@ -259,3 +539,7 @@ def _print_terminal_summary(reviews, app_name):
     print(f"Reviews:      {n:,}")
     print(f"Avg polarity: {avg_pol:.2f}")
     print(f"Themes:       {themes}")
+    print(f"Issues:       {len(issues)}")
+    if issues:
+        top = issues[0]
+        print(f"Top issue:    priority {top['score']:.2f} ({top['count']} reviews, avg rating {top['avg_rating']:.1f})")

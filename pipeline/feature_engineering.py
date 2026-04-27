@@ -33,6 +33,8 @@ NER_STOPWORDS = {
     "thanks", "thank you", "ok", "okay", "hi", "hello", "yes", "no",
     "wow", "omg", "wtf", "lol", "lmao", "yeah", "nope", "nah",
     "fine", "sure", "well", "ugh", "eh", "huh", "nothing", "something",
+    # UI button / CTA labels that surface in ALL-CAPS and get mistagged as ORG
+    "cancel", "buy", "pay", "submit", "click", "tap",
 }
 
 # Keywords that signal a concrete technical/bug issue worth escalating
@@ -73,6 +75,8 @@ def spacy_features(text, brand_stopwords=frozenset()):
     for chunk in doc.noun_chunks:
         aspect = chunk.root.lemma_.lower()
         if aspect in STOPWORDS or len(aspect) <= 2 or not aspect.isalpha():
+            continue
+        if aspect in brand_stopwords:
             continue
         if aspect in seen:
             continue
