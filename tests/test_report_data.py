@@ -65,7 +65,7 @@ def _synthetic_corpus(n_negative=40, n_positive=20):
 EXPECTED_TOP_KEYS = {
     "header", "overall", "issues", "run_delta", "positives", "absa",
     "urgent", "emotions", "entities", "aspect_index", "feature_summary",
-    "_meta",
+    "run_summary", "_meta",
 }
 
 
@@ -272,3 +272,178 @@ def test_render_html_runs_first_run_branch_with_app_slug():
     html = render_html(data)
     assert "Run Delta" in html
     assert "baseline" in html.lower()
+
+
+# ---------------------------------------------------------------------------
+# Phase VII — run summary, ribbon, and section ordering
+# ---------------------------------------------------------------------------
+
+def test_run_summary_has_ribbon_and_narrative():
+    reviews = _synthetic_corpus()
+    data = build_report_data(reviews, "TestApp", persist_snapshots=False)
+    rs = data["run_summary"]
+    assert "ribbon" in rs and "narrative" in rs
+    assert {"reviews", "escalating", "new", "resolved"} == set(rs["ribbon"].keys())
+
+
+def test_run_summary_narrative_describes_top_issue():
+    """The narrative should mention the top issue's label and review count."""
+    reviews = _synthetic_corpus()
+    data = build_report_data(reviews, "TestApp", persist_snapshots=False)
+    top = data["issues"][0]
+    narrative = data["run_summary"]["narrative"]
+    assert top["label"] in narrative
+    assert f"{top['count']:,}" in narrative
+
+
+def test_run_summary_narrative_no_issues_branch():
+    """A purely positive corpus → narrative says no negative clusters."""
+    np.random.seed(0)
+    e = (np.array([1, 0, 0, 0], dtype=np.float32) + np.random.randn(4) * 0.05).tolist()
+    reviews = [_r(0, "great", 5, polarity=0.5, urgency=0.1, emotion="joy",
+                  aspects=("app", "interface"),
+                  date=f"2026-01-{(i % 28) + 1:02d}", embedding=e)
+               for i in range(30)]
+    data = build_report_data(reviews, "TestApp", persist_snapshots=False)
+    assert "no negative-leaning" in data["run_summary"]["narrative"]
+
+
+def test_run_summary_ribbon_uses_none_when_no_comparison():
+    """First run / no app_slug → ribbon counts for delta fields are None."""
+    reviews = _synthetic_corpus()
+    data = build_report_data(reviews, "TestApp", app_slug=None, persist_snapshots=False)
+    ribbon = data["run_summary"]["ribbon"]
+    assert ribbon["reviews"] == len(reviews)
+    assert ribbon["escalating"] is None
+    assert ribbon["new"] is None
+    assert ribbon["resolved"] is None
+
+
+def test_run_summary_ribbon_has_counts_with_prior(temp_db):
+    """With persisted snapshots from a prior run, ribbon counts are integers."""
+    import time
+
+    reviews = _synthetic_corpus()
+    # First run: writes baseline snapshot.
+    build_report_data(reviews, "TestApp", app_slug="testapp", persist_snapshots=True)
+    time.sleep(1.1)  # ensure run_id differs
+    # Second run: should now have a prior to compare against.
+    data = build_report_data(reviews, "TestApp", app_slug="testapp",
+                             persist_snapshots=True)
+    ribbon = data["run_summary"]["ribbon"]
+    assert isinstance(ribbon["escalating"], int)
+    assert isinstance(ribbon["new"], int)
+    assert isinstance(ribbon["resolved"], int)
+
+
+def test_run_summary_baseline_narrative_says_baseline():
+    """First run with app_slug → narrative explicitly mentions baseline."""
+    reviews = _synthetic_corpus()
+    data = build_report_data(reviews, "TestApp", app_slug="testapp",
+                             persist_snapshots=False)
+    assert "Baseline" in data["run_summary"]["narrative"]
+
+
+# ---------------------------------------------------------------------------
+# HTML ordering — Run Delta first, Priority Issues second, Detailed third
+# ---------------------------------------------------------------------------
+
+def test_html_renders_elevator_pitch():
+    """The pitch tagline appears under the H1.
+    Jinja autoescapes apostrophes (e.g. "what's" → "what&#39;s") so we check
+    for an unambiguous substring without special characters.
+    """
+    from pipeline.summarizer import render_html
+
+    reviews = _synthetic_corpus()
+    data = build_report_data(reviews, "TestApp", persist_snapshots=False)
+    html = render_html(data)
+    assert "Groups app reviews into recurring issues" in html
+    assert "tracks them over time" in html
+
+
+def test_html_renders_ribbon():
+    """All four ribbon stat cards appear in the rendered HTML."""
+    from pipeline.summarizer import render_html
+
+    reviews = _synthetic_corpus()
+    data = build_report_data(reviews, "TestApp", persist_snapshots=False)
+    html = render_html(data)
+    # Ribbon labels appear in the page
+    for label in ["reviews", "escalating", "new", "resolved"]:
+        assert f"<span class=\"label\">{label}</span>" in html
+
+
+def test_html_orders_delta_before_priority_before_detailed():
+    """Run Delta should appear before Priority Issues, which appears before
+    Detailed analysis. This is the editorial-pass spec from Phase VII."""
+    from pipeline.summarizer import render_html
+
+    reviews = _synthetic_corpus()
+    data = build_report_data(reviews, "TestApp", app_slug="testapp",
+                             persist_snapshots=False)
+    html = render_html(data)
+    delta_pos = html.find('id="delta"')
+    priority_pos = html.find('id="priority"')
+    detailed_pos = html.find('id="detailed"')
+    assert delta_pos > 0
+    assert priority_pos > 0
+    assert detailed_pos > 0
+    assert delta_pos < priority_pos < detailed_pos
+
+
+def test_html_collapses_issues_beyond_top_3():
+    """When there are >3 priority issues, 4-5 are wrapped in a collapsed
+    <details> element, while top 3 render inline."""
+    from pipeline.summarizer import render_html
+    import numpy as np
+
+    np.random.seed(0)
+    embeddings = [(np.array([1 if i == j else 0 for j in range(8)], dtype=np.float32)
+                   + np.random.randn(8) * 0.05).tolist() for i in range(6)]
+    reviews = []
+    for cid in range(5):
+        for i in range(40 - cid * 4):
+            reviews.append(_r(cid, f"cluster {cid} body", 1,
+                              aspects=(f"asp{cid}_a", f"asp{cid}_b", f"asp{cid}_c"),
+                              date=f"2026-01-{(i % 28) + 1:02d}",
+                              embedding=embeddings[cid]))
+    data = build_report_data(reviews, "TestApp", persist_snapshots=False)
+    html = render_html(data)
+
+    if len(data["issues"]) > 3:
+        assert 'class="more-issues"' in html
+        assert "Show " in html and "more priority issue" in html
+    else:
+        # Tiny synthetic dataset may produce ≤3 issues — the collapse just
+        # doesn't render. Both paths are valid; we only assert the layout
+        # when there's something to collapse.
+        assert 'class="more-issues"' not in html
+
+
+def test_markdown_includes_pitch_and_run_summary():
+    """Both the elevator pitch and the auto-narrative appear in the MD output."""
+    from pipeline.summarizer import render_markdown, ELEVATOR_PITCH
+
+    reviews = _synthetic_corpus()
+    data = build_report_data(reviews, "TestApp", persist_snapshots=False)
+    md = render_markdown(data)
+    assert ELEVATOR_PITCH in md
+    # Narrative leads as a blockquote
+    assert "> Top issue:" in md or "> " + str(len(reviews)) in md
+
+
+def test_markdown_has_detailed_analysis_separator():
+    """The supporting sections live below a horizontal rule + 'Detailed
+    analysis' heading, so plain-text readers can see the structural hint."""
+    from pipeline.summarizer import render_markdown
+
+    reviews = _synthetic_corpus()
+    data = build_report_data(reviews, "TestApp", persist_snapshots=False)
+    md = render_markdown(data)
+    assert "## Detailed analysis" in md
+    # The separator line precedes the detailed section
+    sep_pos = md.find("---\n\n## Detailed analysis")
+    overall_pos = md.find("## Overall Sentiment")
+    assert sep_pos > 0
+    assert sep_pos < overall_pos  # separator appears before overall sentiment

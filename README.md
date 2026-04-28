@@ -1,15 +1,24 @@
-# App Review Ingestion & Feature Engineering Pipeline
+# Review Issue Tracker
 
-An end-to-end pipeline that scrapes app store reviews, cleans and stores them in a relational database, extracts model-ready NLP features, and generates human-readable analytical reports — both markdown and interactive HTML.
+App reviews tell you what's wrong with your product. Nobody reads 10,000 of them.
 
-Built in six phases:
+This pipeline groups recurring complaints into issues, scores their severity, and tracks how each one moves run over run. The result: at a glance, you see what's getting worse, what's improving, what's new, and what's resolved — without reading every review.
+
+Each run produces two reports: a markdown file for grep / diff / pasting into chat, and a self-contained HTML file with interactive sparklines and sortable tables.
+
+---
+
+## Development history
+
+The pipeline was built in six phases. Earlier phases established the ingestion, feature, and clustering machinery; later phases added the time dimension and presentation layer that make the output actually usable.
 
 - **Phase I** — data ingestion: scraping → cleaning → storage → CSV export
 - **Phase II** — feature engineering: raw review text → structured signals (sentiment, aspects, emotion, urgency, entities, embeddings, themes) → summary report
 - **Phase III** — ABSA: per-aspect polarity via DeBERTa (replaces review-level polarity on aspects), new "Top Loved / Hated Features" report section
 - **Phase IV** — time dimension: per-run cluster snapshots, cross-run issue matching, run-delta section (escalating / improving / new / resolved), intra-run mention sparklines, per-issue app-version slicing
-- **Phase V** — LLM-generated cluster labels (4–6 word issue titles via Claude Haiku, content-addressed cache); thumbs-up-weighted representative review selection; expanded test coverage (167 tests)
+- **Phase V** — LLM-generated cluster labels (4–6 word issue titles via Claude Haiku, content-addressed cache); thumbs-up-weighted representative review selection; expanded test coverage
 - **Phase VI** — interactive single-file HTML report alongside the markdown one: Pico CSS + Chart.js inlined, sortable tables, live aspect filter, dark/light theme
+- **Phase VII** — editorial pass: pitch tagline, auto-generated per-run narrative, four-stat ribbon (reviews · escalating · new · resolved), Run Delta promoted to the lead position, top-3 issue cards with the rest collapsed, supporting analysis demoted below a "Detailed analysis" divider
 
 ---
 

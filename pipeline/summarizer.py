@@ -28,6 +28,14 @@ from pipeline.llm import generate_cluster_label
 
 REPORT_DIR = "reports"
 
+# One-sentence pitch that anchors the report. Renders as the subtitle on
+# the HTML page and the lead line of the markdown report. Resist the urge
+# to mention any technique here — see Phase VII feedback rationale.
+ELEVATOR_PITCH = (
+    "Groups app reviews into recurring issues and tracks them over time — "
+    "surfacing what's getting worse, improving, new, or resolved."
+)
+
 NEG_THRESHOLD = -0.1
 POS_THRESHOLD = 0.1
 SUBJECTIVE_THRESHOLD = 0.5
@@ -109,7 +117,7 @@ def build_report_data(reviews, app_name, app_slug=None, run_id=None,
             matches = match_issues(all_snapshots, prior_snapshots)
             resolved = find_resolved(matches, prior_snapshots)
 
-    return {
+    data = {
         "header":          _header_data(reviews, app_name, run_id),
         "overall":         _overall_sentiment_data(reviews),
         "issues":          _issues_data(issues, corpus_df, total),
@@ -128,6 +136,10 @@ def build_report_data(reviews, app_name, app_slug=None, run_id=None,
             "issues_full":  issues,  # full unfiltered list (for terminal summary)
         },
     }
+    # Run summary is derived from issues + run_delta + feature_summary, so it
+    # has to be computed after the rest of the dict is assembled.
+    data["run_summary"] = _run_summary_data(data)
+    return data
 
 
 # --- Per-section data extractors -----------------------------------------
@@ -466,6 +478,101 @@ def _feature_summary_data(reviews, issues):
     }
 
 
+def _run_summary_data(data):
+    """
+    Build the per-run narrative + the at-a-glance ribbon that lead the report.
+
+    Two outputs:
+        ribbon  — {reviews, escalating, new, resolved}; the four count fields
+                  are ints when comparison is possible, None when it isn't
+                  (first run for this app, or no app_slug supplied).
+                  Renderers should display None as "—".
+        narrative — a 1-2 sentence string describing this run in plain English.
+                    Adapts to: no issues / first run / no prior / has prior.
+
+    Reads from already-built sections of `data` (issues, run_delta,
+    feature_summary, header) so it has to be computed after them.
+    """
+    issues = data["issues"]
+    rd = data["run_delta"]
+    n_reviews = data["header"]["review_count"]
+    n_issues = data["feature_summary"]["n_issues"]
+
+    # ----- ribbon counts ----------------------------------------------------
+    has_comparison = not (rd.get("omitted") or rd.get("first_run"))
+    if has_comparison:
+        ribbon = {
+            "reviews":    n_reviews,
+            "escalating": len(rd.get("escalating", [])),
+            "new":        len(rd.get("new", [])),
+            "resolved":   len(rd.get("resolved", [])),
+        }
+    else:
+        # First run / snapshot persistence off → no comparison data exists.
+        ribbon = {
+            "reviews":    n_reviews,
+            "escalating": None,
+            "new":        None,
+            "resolved":   None,
+        }
+
+    # ----- narrative --------------------------------------------------------
+    # Case A: no priority issues at all (very positive corpus or tiny dataset).
+    if not issues:
+        narrative = (
+            f"{n_reviews:,} reviews analyzed — no negative-leaning clusters "
+            f"detected this run."
+        )
+        return {"ribbon": ribbon, "narrative": narrative}
+
+    top = issues[0]
+    # Plain text — no markdown emphasis. Renderers can add their own styling
+    # if they want (the HTML template wraps the label in <strong> via CSS,
+    # markdown viewers show it as plain text).
+    top_part = (
+        f"Top issue: {top['label']} — {top['count']:,} reviews, "
+        f"avg {top['avg_rating']:.1f}★, priority {top['score']:.2f}."
+    )
+
+    # Case B: first run for this app — no prior to compare against.
+    if rd.get("first_run"):
+        s = "s" if n_issues != 1 else ""
+        change_part = (
+            f"Baseline run — {n_issues} priority issue{s} identified. "
+            f"Future runs will compare against this snapshot."
+        )
+    # Case C: snapshotting disabled (no app_slug) — no comparison either.
+    elif rd.get("omitted"):
+        s = "s" if n_issues != 1 else ""
+        change_part = f"{n_issues} priority issue{s} this run."
+    # Case D: has prior — describe what changed.
+    else:
+        esc = len(rd.get("escalating", []))
+        imp = len(rd.get("improving", []))
+        new_ = len(rd.get("new", []))
+        res = len(rd.get("resolved", []))
+
+        parts = []
+        if esc:
+            parts.append(f"{esc} escalating")
+        if imp:
+            parts.append(f"{imp} improving")
+        if new_:
+            parts.append(f"{new_} new")
+        if res:
+            parts.append(f"{res} resolved")
+
+        if parts:
+            change_part = ", ".join(parts) + " since prior run."
+            # Capitalize first word for sentence-correctness
+            change_part = change_part[0].upper() + change_part[1:]
+        else:
+            change_part = "No significant changes since prior run."
+
+    narrative = f"{top_part} {change_part}"
+    return {"ribbon": ribbon, "narrative": narrative}
+
+
 # ---------------------------------------------------------------------------
 # Markdown rendering (Phase VI: thin wrappers over the data dict)
 # ---------------------------------------------------------------------------
@@ -554,7 +661,9 @@ def render_html(data):
     }
 
     return template.render(
+        elevator_pitch=ELEVATOR_PITCH,
         header=data["header"],
+        run_summary=data["run_summary"],
         overall=data["overall"],
         issues=data["issues"],
         run_delta=data["run_delta"],
@@ -572,12 +681,21 @@ def render_html(data):
 
 
 def render_markdown(data):
-    """Render the full markdown report from a build_report_data() dict."""
+    """Render the full markdown report from a build_report_data() dict.
+
+    Section order follows the editorial pass (Phase VII): pitch + auto-summary
+    + ribbon lead, then Run Delta (the answer to 'what changed?'), then top
+    priority issues, then a separator, then the supporting analysis sections.
+    """
     sections = [
         _header_md(data["header"]),
-        _overall_sentiment_md(data["overall"]),
-        _priority_issues_md(data["issues"]),
+        _run_summary_md(data["run_summary"]),
         _run_delta_md(data["run_delta"]),
+        _priority_issues_md(data["issues"]),
+        # Supporting analysis (lower visual weight in the HTML; in markdown
+        # we keep them as ordinary sections but visually after a separator).
+        _md_separator("Detailed analysis"),
+        _overall_sentiment_md(data["overall"]),
         _positives_md(data["positives"]),
         _absa_md(data["absa"]),
         _urgent_md(data["urgent"]),
@@ -589,6 +707,14 @@ def render_markdown(data):
     return "\n\n".join(s for s in sections if s) + "\n"
 
 
+def _md_separator(label):
+    """A horizontal rule + small heading marking the start of supporting
+    detail. Keeps the markdown report scannable without making the
+    sub-sections feel demoted in plain text the way they're demoted in HTML.
+    """
+    return f"---\n\n## {label}"
+
+
 # ---------------------------------------------------------------------------
 # Header + overall sentiment
 # ---------------------------------------------------------------------------
@@ -596,9 +722,32 @@ def render_markdown(data):
 def _header_md(data):
     return (
         f"# Review Analysis Report — {data['app_name']}\n"
-        f"*{data['review_count']:,} reviews · generated {data['generated_at']} "
-        f"· run `{data['run_id']}`*"
+        f"*{ELEVATOR_PITCH}*\n\n"
+        f"{data['review_count']:,} reviews · generated {data['generated_at']} "
+        f"· run `{data['run_id']}`"
     )
+
+
+def _run_summary_md(data):
+    """Render the at-a-glance ribbon + auto-narrative as a leading blockquote.
+
+    Ribbon counts that aren't computable for this run (first run, no app_slug)
+    render as em-dash so the field stays visible — the absence is informative.
+    """
+    ribbon = data["ribbon"]
+    if ribbon["escalating"] is None:
+        ribbon_line = (
+            f"**{ribbon['reviews']:,}** reviews · — escalating · — new · — resolved"
+        )
+    else:
+        ribbon_line = (
+            f"**{ribbon['reviews']:,}** reviews · "
+            f"**{ribbon['escalating']}** escalating · "
+            f"**{ribbon['new']}** new · "
+            f"**{ribbon['resolved']}** resolved"
+        )
+    # Blockquote so it stands out at the top in any markdown viewer.
+    return f"> {data['narrative']}\n>\n> {ribbon_line}"
 
 
 def _header(reviews, app_name, run_id):

@@ -86,13 +86,32 @@
       height: 90px; position: relative; margin: 0.5rem 0;
     }
 
-    /* Pills */
+    /* Pills — high-contrast in both themes (was hard to read against
+       Pico's secondary-background grey) */
     .pill {
       display: inline-block;
-      background: var(--pico-secondary-background, #e9ecef);
-      color: var(--pico-color);
-      padding: 0.2rem 0.7rem; border-radius: 999px;
-      font-size: 0.85rem; margin: 0.15rem 0.15rem 0.15rem 0;
+      background: #dbeafe;       /* blue-100 */
+      color: #1e3a8a;            /* blue-900 — strong contrast on light bg */
+      border: 1px solid #93c5fd; /* blue-300 — gentle outline */
+      padding: 0.22rem 0.7rem;
+      border-radius: 999px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      margin: 0.15rem 0.15rem 0.15rem 0;
+      white-space: nowrap;
+    }
+    [data-theme="dark"] .pill {
+      background: #1e3a8a;       /* blue-900 */
+      color: #dbeafe;            /* blue-100 */
+      border-color: #3b82f6;     /* blue-500 */
+    }
+    /* Auto-theme (no explicit data-theme attribute on html) */
+    @media (prefers-color-scheme: dark) {
+      html:not([data-theme="light"]) .pill {
+        background: #1e3a8a;
+        color: #dbeafe;
+        border-color: #3b82f6;
+      }
     }
 
     /* Run delta */
@@ -149,21 +168,131 @@
 
     /* Compact code spans for run IDs */
     code { font-size: 0.85em; }
+
+    /* Phase VII editorial pass — lead-paragraph styling */
+    p.pitch {
+      font-size: 1.1rem; font-weight: 500;
+      color: var(--pico-color);
+      margin: 0.4rem 0 0.6rem;
+      max-width: 70ch;
+    }
+    p.meta {
+      color: var(--pico-muted-color); font-size: 0.9rem;
+      margin: 0 0 1.5rem;
+    }
+    p.narrative {
+      font-size: 1.05rem; line-height: 1.5;
+      margin: 1rem 0 1rem; max-width: 70ch;
+    }
+    .stat-grid.ribbon {
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.6rem; margin-bottom: 2rem;
+    }
+    .stat-grid.ribbon .stat-card .value {
+      font-size: 2rem; font-variant-numeric: tabular-nums;
+    }
+
+    /* Detailed-analysis divider — visually demotes everything below */
+    hr.detailed-divider {
+      margin: 3rem 0 1rem;
+      border: 0; border-top: 1px solid var(--pico-muted-border-color);
+    }
+    section#detailed > h2 {
+      color: var(--pico-muted-color); font-size: 1.3rem;
+      margin-top: 0.5rem;
+    }
+    section#detailed { opacity: 0.95; }
+    section#detailed h2:not(:first-child),
+    section#detailed h3 {
+      color: var(--pico-color); font-size: 1.1rem;
+      margin-top: 2rem;
+    }
+
+    /* Show-more expander for issues 4-5 */
+    details.more-issues > summary {
+      cursor: pointer; padding: 0.6rem 1rem;
+      background: var(--pico-secondary-background, rgba(0,0,0,0.04));
+      border-radius: var(--pico-border-radius);
+      font-weight: 500; margin: 1rem 0;
+    }
+    details.more-issues > summary:hover {
+      background: var(--pico-muted-border-color);
+    }
+
+    /* Editorial-pass card layout — quieter, more story-shaped (Phase VII v2) */
+    .card-stats {
+      font-size: 0.95rem; color: var(--pico-muted-color);
+      margin-bottom: 1.2rem;
+    }
+    .card-stats .big-number {
+      font-size: 1.8rem; font-weight: 600;
+      color: var(--pico-color);
+      margin-right: 0.6rem;
+      font-variant-numeric: tabular-nums;
+    }
+    .card-stats .big-number small {
+      font-size: 0.6em; font-weight: 400; color: var(--pico-muted-color);
+      margin-left: 0.2rem;
+    }
+    .card-stats .sep {
+      margin: 0 0.7rem; color: var(--pico-muted-border-color);
+    }
+    .sparkline-caption {
+      font-size: 0.85rem; color: var(--pico-muted-color);
+      margin: 0.2rem 0 1.2rem; font-style: italic;
+    }
+    /* Endpoint axis labels: start date flush left, end date flush right
+       under the sparkline. Lighter visual weight than a full 12-label axis. */
+    .sparkline-axis {
+      display: flex; justify-content: space-between;
+      font-size: 0.75rem; color: var(--pico-muted-color);
+      margin: -0.2rem 0 1.2rem; padding: 0 0.1rem;
+      font-variant-numeric: tabular-nums;
+    }
+    .quotes {
+      margin: 1.2rem 0;
+    }
+    .quotes-intro {
+      font-size: 0.9rem; color: var(--pico-muted-color);
+      text-transform: uppercase; letter-spacing: 0.06em;
+      margin-bottom: 0.4rem;
+    }
+    .quotes blockquote {
+      margin: 0.4rem 0; padding: 0.5rem 0.9rem;
+      border-left: 3px solid var(--pico-muted-border-color);
+      background: rgba(0, 0, 0, 0.02);
+      font-style: normal; color: var(--pico-color);
+      font-size: 0.95rem; line-height: 1.45;
+    }
+    [data-theme="dark"] .quotes blockquote {
+      background: rgba(255, 255, 255, 0.03);
+    }
+    .metrics-footer {
+      margin-top: 1.2rem; padding-top: 1rem;
+      border-top: 1px solid var(--pico-muted-border-color);
+      font-size: 0.9rem; color: var(--pico-muted-color);
+    }
+    .metrics-footer .metric-row {
+      margin: 0.5rem 0; display: flex; flex-wrap: wrap;
+      align-items: center; gap: 0.4rem;
+    }
+    .metrics-footer .metric-label {
+      font-weight: 600; color: var(--pico-color);
+      min-width: 7rem; text-transform: lowercase;
+      font-variant: small-caps;
+    }
+    .metrics-footer .split-bar {
+      flex: 1; min-width: 200px;
+    }
   </style>
 </head>
 <body>
 <nav class="top">
   <ul>
     <li class="app-name">{{ header.app_name }}</li>
-    <li><a href="#overview">Overview</a></li>
-    <li><a href="#priority">Priority Issues</a></li>
     {% if not run_delta.omitted %}<li><a href="#delta">Run Delta</a></li>{% endif %}
-    {% if positives.entries %}<li><a href="#positives">Positives</a></li>{% endif %}
-    {% if absa.loved or absa.hated %}<li><a href="#absa">ABSA</a></li>{% endif %}
-    <li><a href="#urgent">Urgent</a></li>
-    <li><a href="#emotions">Emotions</a></li>
-    {% if entities %}<li><a href="#entities">Entities</a></li>{% endif %}
-    {% if aspect_index %}<li><a href="#aspect-index">Aspect Index</a></li>{% endif %}
+    <li><a href="#priority">Priority Issues</a></li>
+    <li><a href="#detailed">Detailed analysis</a></li>
     <li><button class="theme-toggle" onclick="toggleTheme()">Theme</button></li>
   </ul>
 </nav>
@@ -171,151 +300,36 @@
 <main class="container">
   <header>
     <h1>Review Analysis Report — {{ header.app_name }}</h1>
-    <p>{{ "{:,}".format(header.review_count) }} reviews · generated {{ header.generated_at }} · run <code>{{ header.run_id }}</code></p>
+    <p class="pitch">{{ elevator_pitch }}</p>
+    <p class="meta">{{ "{:,}".format(header.review_count) }} reviews · generated {{ header.generated_at }} · run <code>{{ header.run_id }}</code></p>
   </header>
 
-  <!-- Overview -->
-  <section id="overview">
-    <h2>Overall Sentiment</h2>
-    <div class="stat-grid">
+  <!-- Run summary: narrative + 4-stat ribbon -->
+  <section id="run-summary">
+    <p class="narrative">{{ run_summary.narrative }}</p>
+    <div class="stat-grid ribbon">
       <div class="stat-card">
-        <span class="label">Avg rating</span>
-        <span class="value">{{ "%.2f"|format(overall.avg_rating) }} <small>/ 5</small></span>
+        <span class="value">{{ "{:,}".format(run_summary.ribbon.reviews) }}</span>
+        <span class="label">reviews</span>
       </div>
       <div class="stat-card">
-        <span class="label">Avg polarity</span>
-        <span class="value">{{ "%+.2f"|format(overall.avg_polarity) }}</span>
+        <span class="value">{% if run_summary.ribbon.escalating is none %}—{% else %}{{ run_summary.ribbon.escalating }}{% endif %}</span>
+        <span class="label">escalating</span>
       </div>
       <div class="stat-card">
-        <span class="label">% positive</span>
-        <span class="value">{{ "%.0f"|format(overall.pos_pct * 100) }}%</span>
+        <span class="value">{% if run_summary.ribbon.new is none %}—{% else %}{{ run_summary.ribbon.new }}{% endif %}</span>
+        <span class="label">new</span>
       </div>
       <div class="stat-card">
-        <span class="label">% negative</span>
-        <span class="value">{{ "%.0f"|format(overall.neg_pct * 100) }}%</span>
+        <span class="value">{% if run_summary.ribbon.resolved is none %}—{% else %}{{ run_summary.ribbon.resolved }}{% endif %}</span>
+        <span class="label">resolved</span>
       </div>
-      <div class="stat-card">
-        <span class="label">% obj. negative</span>
-        <span class="value">{{ "%.0f"|format(overall.obj_neg_pct * 100) }}%</span>
-      </div>
-      <div class="stat-card">
-        <span class="label">% subj. negative</span>
-        <span class="value">{{ "%.0f"|format(overall.subj_neg_pct * 100) }}%</span>
-      </div>
-    </div>
-
-    <h4>Polarity distribution</h4>
-    <div class="stacked-bar" title="positive / neutral / negative">
-      {% if overall.pos_count %}<div style="background:#5cb85c; flex: {{ overall.pos_count }}">{{ overall.pos_count }} positive</div>{% endif %}
-      {% if overall.neutral_count %}<div style="background:#aaa; flex: {{ overall.neutral_count }}">{{ overall.neutral_count }} neutral</div>{% endif %}
-      {% if overall.neg_count %}<div style="background:#d9534f; flex: {{ overall.neg_count }}">{{ overall.neg_count }} negative</div>{% endif %}
     </div>
   </section>
 
-  <!-- Priority Issues -->
-  <section id="priority">
-    <h2>Priority Issues</h2>
-    <p>Negative-leaning clusters ranked by composite priority — weighted by volume, severity, urgency, and intense-emotion share (anger / disgust / fear).</p>
-
-    {% if issues %}
-    <table class="sortable-table">
-      <thead>
-        <tr>
-          <th>#</th><th>Issue</th><th>Reviews</th><th>Avg rating</th>
-          <th>Bug %</th><th>Priority</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for issue in issues %}
-        <tr>
-          <td>{{ issue.rank }}</td>
-          <td><a href="#issue-{{ issue.rank }}">{{ issue.label }}</a></td>
-          <td>{{ issue.count }}</td>
-          <td>{{ "%.1f"|format(issue.avg_rating) }}</td>
-          <td>{{ "%.0f"|format(issue.bug_complaint.obj_share * 100) }}%</td>
-          <td>{{ "%.2f"|format(issue.score) }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-
-    {% for issue in issues %}
-    <article class="issue-card" id="issue-{{ issue.rank }}">
-      <h3>Issue {{ issue.rank }} — {{ issue.label }}</h3>
-      {% if issue.label_is_llm %}
-      <div class="subtitle">{{ issue.aspect_string }}</div>
-      {% endif %}
-      <div class="stats-row">
-        <span><strong>{{ "{:,}".format(issue.count) }}</strong> reviews</span>
-        <span>avg rating <strong>{{ "%.1f"|format(issue.avg_rating) }}</strong></span>
-        <span>avg urgency <strong>{{ "%.2f"|format(issue.avg_urgency) }}</strong></span>
-        <span>priority <strong>{{ "%.2f"|format(issue.score) }}</strong></span>
-      </div>
-
-      {% if issue.sparkline %}
-      <h4>Trend ({{ issue.sparkline.earliest }} → {{ issue.sparkline.latest }})</h4>
-      <div class="sparkline-wrap"><canvas data-sparkline="{{ loop.index0 }}"></canvas></div>
-      {% endif %}
-
-      <h4>Bug vs complaint split</h4>
-      <div class="stacked-bar">
-        {% if issue.bug_complaint.obj_count %}<div style="background:#d9534f; flex: {{ issue.bug_complaint.obj_count }}" title="{{ issue.bug_complaint.obj_count }} objective (bug-like)">
-          {% if issue.bug_complaint.obj_share >= 0.12 %}{{ "%.0f"|format(issue.bug_complaint.obj_share * 100) }}% bugs{% endif %}
-        </div>{% endif %}
-        {% if issue.bug_complaint.subj_count %}<div style="background:#f0ad4e; flex: {{ issue.bug_complaint.subj_count }}" title="{{ issue.bug_complaint.subj_count }} subjective (complaint-like)">
-          {% if issue.bug_complaint.subj_share >= 0.12 %}{{ "%.0f"|format(issue.bug_complaint.subj_share * 100) }}% complaints{% endif %}
-        </div>{% endif %}
-      </div>
-      <p style="margin-top:0.5rem">
-        <strong>Bug aspects:</strong> {{ issue.bug_complaint.obj_aspects | join(", ") if issue.bug_complaint.obj_aspects else "—" }}<br>
-        <strong>Complaint aspects:</strong> {{ issue.bug_complaint.subj_aspects | join(", ") if issue.bug_complaint.subj_aspects else "—" }}
-      </p>
-
-      {% if issue.emotions %}
-      <h4>Emotions</h4>
-      <p>
-      {% for e in issue.emotions[:5] %}
-        <span class="pill">{{ e.label }} {{ "%.0f"|format(e.share * 100) }}%</span>
-      {% endfor %}
-      </p>
-      {% endif %}
-
-      {% if issue.entities %}
-      <h4>Mentioned entities</h4>
-      <p>
-      {% for ent in issue.entities %}
-        <span class="pill">{{ ent.text }} ({{ ent.count }})</span>
-      {% endfor %}
-      </p>
-      {% endif %}
-
-      {% if issue.app_versions %}
-      <h4>By app version</h4>
-      <p>
-      {% for v in issue.app_versions %}
-        <span class="pill">{{ v.version }} ({{ v.count }})</span>
-      {% endfor %}
-      </p>
-      {% endif %}
-
-      {% if issue.representative_reviews %}
-      <details>
-        <summary><strong>Representative reviews</strong> ({{ issue.representative_reviews|length }})</summary>
-        <ul>
-        {% for r in issue.representative_reviews %}
-          <li>{{ r }}</li>
-        {% endfor %}
-        </ul>
-      </details>
-      {% endif %}
-    </article>
-    {% endfor %}
-    {% else %}
-    <p><em>No negative-leaning clusters detected.</em></p>
-    {% endif %}
-  </section>
-
-  <!-- Run Delta -->
+  <!-- Run Delta — moved to lead position (Phase VII) since it's the most
+       valuable answer the report gives. Renders even on first runs (with
+       a baseline placeholder) so the section's existence isn't a surprise. -->
   {% if not run_delta.omitted %}
   <section id="delta">
     <h2>Run Delta</h2>
@@ -373,9 +387,171 @@
   </section>
   {% endif %}
 
-  <!-- Top Positives -->
-  {% if positives.entries %}
-  <section id="positives">
+  <!-- Priority Issues — top 3 cards inline, 4-5 inside an expander. The
+       leaderboard table still lists all of them so nothing's hidden, just
+       prioritized. -->
+  <section id="priority">
+    <h2>Priority Issues</h2>
+    <p>Negative-leaning clusters ranked by composite priority — weighted by volume, severity, urgency, and intense-emotion share (anger / disgust / fear).</p>
+
+    {% if issues %}
+    <table class="sortable-table">
+      <thead>
+        <tr>
+          <th>#</th><th>Issue</th><th>Reviews</th><th>Avg rating</th><th>Priority</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for issue in issues %}
+        <tr>
+          <td>{{ issue.rank }}</td>
+          <td><a href="#issue-{{ issue.rank }}">{{ issue.label }}</a></td>
+          <td>{{ issue.count }}</td>
+          <td>{{ "%.1f"|format(issue.avg_rating) }}</td>
+          <td>{{ "%.2f"|format(issue.score) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {# Render a card. Pulled into a Jinja macro so the same markup is used
+       for the prominent top-3 and the collapsed 4-5. Phase VII v2: quieter
+       layout, no H4 subheadings, representative quotes lead, secondary
+       metrics compacted into a footer block at the bottom. #}
+    {% macro issue_card(issue) %}
+    <article class="issue-card" id="issue-{{ issue.rank }}">
+      <h3>Issue {{ issue.rank }} — {{ issue.label }}</h3>
+      {% if issue.label_is_llm %}
+      <div class="subtitle">{{ issue.aspect_string }}</div>
+      {% endif %}
+
+      <div class="card-stats">
+        <span class="big-number">{{ "{:,}".format(issue.count) }}<small>reviews</small></span>
+        <span>{{ "%.1f"|format(issue.avg_rating) }}★ avg</span>
+        <span class="sep">·</span>
+        <span>priority {{ "%.2f"|format(issue.score) }}</span>
+      </div>
+
+      {% if issue.sparkline %}
+      <div class="sparkline-wrap"><canvas data-sparkline="{{ issue.rank - 1 }}"></canvas></div>
+      <div class="sparkline-axis">
+        <span>{{ issue.sparkline.earliest }}</span>
+        <span>{{ issue.sparkline.latest }}</span>
+      </div>
+      {% endif %}
+
+      {% if issue.representative_reviews %}
+      <div class="quotes">
+        <div class="quotes-intro">In their words</div>
+        {% for r in issue.representative_reviews %}
+        <blockquote>{{ r }}</blockquote>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <div class="metrics-footer">
+        <div class="metric-row">
+          <span class="metric-label">Type</span>
+          <div class="stacked-bar split-bar">
+            {% if issue.bug_complaint.obj_count %}<div style="background:#d9534f; flex: {{ issue.bug_complaint.obj_count }}" title="{{ issue.bug_complaint.obj_count }} bug-like reviews">
+              {% if issue.bug_complaint.obj_share >= 0.15 %}{{ "%.0f"|format(issue.bug_complaint.obj_share * 100) }}% bugs{% endif %}
+            </div>{% endif %}
+            {% if issue.bug_complaint.subj_count %}<div style="background:#f0ad4e; flex: {{ issue.bug_complaint.subj_count }}" title="{{ issue.bug_complaint.subj_count }} complaint-like reviews">
+              {% if issue.bug_complaint.subj_share >= 0.15 %}{{ "%.0f"|format(issue.bug_complaint.subj_share * 100) }}% complaints{% endif %}
+            </div>{% endif %}
+          </div>
+        </div>
+
+        {% if issue.emotions %}
+        <div class="metric-row">
+          <span class="metric-label">Emotions</span>
+          {% for e in issue.emotions[:4] %}
+            <span class="pill">{{ e.label }} {{ "%.0f"|format(e.share * 100) }}%</span>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if issue.entities %}
+        <div class="metric-row">
+          <span class="metric-label">Mentions</span>
+          {% for ent in issue.entities %}
+            <span class="pill">{{ ent.text }} ×{{ ent.count }}</span>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if issue.app_versions %}
+        <div class="metric-row">
+          <span class="metric-label">App versions</span>
+          {% for v in issue.app_versions %}
+            <span class="pill">{{ v.version }} ×{{ v.count }}</span>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+    </article>
+    {% endmacro %}
+
+    {% for issue in issues[:3] %}
+      {{ issue_card(issue) }}
+    {% endfor %}
+
+    {% if issues|length > 3 %}
+    <details class="more-issues">
+      <summary>Show {{ issues|length - 3 }} more priority issue{{ "s" if (issues|length - 3) != 1 else "" }}</summary>
+      {% for issue in issues[3:] %}
+        {{ issue_card(issue) }}
+      {% endfor %}
+    </details>
+    {% endif %}
+    {% else %}
+    <p><em>No negative-leaning clusters detected.</em></p>
+    {% endif %}
+  </section>
+
+  <!-- Detailed analysis — supporting views, visually demoted (Phase VII). -->
+  <hr class="detailed-divider">
+  <section id="detailed">
+    <h2>Detailed analysis</h2>
+    <p>Supporting views — sentiment distribution, ABSA aspect-level polarity, urgent reviews, emotion / entity / aspect breakdowns. Useful for drill-down; not required reading.</p>
+
+    <!-- Overall Sentiment (moved here from the top in Phase VII) -->
+    <h2>Overall Sentiment</h2>
+    <div class="stat-grid">
+      <div class="stat-card">
+        <span class="label">Avg rating</span>
+        <span class="value">{{ "%.2f"|format(overall.avg_rating) }} <small>/ 5</small></span>
+      </div>
+      <div class="stat-card">
+        <span class="label">Avg polarity</span>
+        <span class="value">{{ "%+.2f"|format(overall.avg_polarity) }}</span>
+      </div>
+      <div class="stat-card">
+        <span class="label">% positive</span>
+        <span class="value">{{ "%.0f"|format(overall.pos_pct * 100) }}%</span>
+      </div>
+      <div class="stat-card">
+        <span class="label">% negative</span>
+        <span class="value">{{ "%.0f"|format(overall.neg_pct * 100) }}%</span>
+      </div>
+      <div class="stat-card">
+        <span class="label">% obj. negative</span>
+        <span class="value">{{ "%.0f"|format(overall.obj_neg_pct * 100) }}%</span>
+      </div>
+      <div class="stat-card">
+        <span class="label">% subj. negative</span>
+        <span class="value">{{ "%.0f"|format(overall.subj_neg_pct * 100) }}%</span>
+      </div>
+    </div>
+    <h4>Polarity distribution</h4>
+    <div class="stacked-bar" title="positive / neutral / negative">
+      {% if overall.pos_count %}<div style="background:#5cb85c; flex: {{ overall.pos_count }}">{{ overall.pos_count }} positive</div>{% endif %}
+      {% if overall.neutral_count %}<div style="background:#aaa; flex: {{ overall.neutral_count }}">{{ overall.neutral_count }} neutral</div>{% endif %}
+      {% if overall.neg_count %}<div style="background:#d9534f; flex: {{ overall.neg_count }}">{{ overall.neg_count }} negative</div>{% endif %}
+    </div>
+
+    <!-- Top Positives -->
+    {% if positives.entries %}
     <h2>Top Positives</h2>
     <p>Clusters where users express satisfaction — useful for marketing and identifying what to preserve.</p>
     <table class="sortable-table">
@@ -393,12 +569,10 @@
       {% endfor %}
       </tbody>
     </table>
-  </section>
-  {% endif %}
+    {% endif %}
 
-  <!-- ABSA -->
-  {% if absa.loved or absa.hated %}
-  <section id="absa">
+    <!-- ABSA -->
+    {% if absa.loved or absa.hated %}
     <h2>Aspect Sentiment (ABSA)</h2>
     <p>Per-aspect polarity scored independently for each (review, aspect) pair by DeBERTa ABSA. Ranked by avg polarity × log(mentions).</p>
 
@@ -427,11 +601,9 @@
     </div>
     {% endfor %}
     {% endif %}
-  </section>
-  {% endif %}
+    {% endif %}
 
-  <!-- Urgent reviews -->
-  <section id="urgent">
+    <!-- Urgent reviews -->
     <h2>Most Urgent Reviews</h2>
     {% if urgent %}
     <p>Top reviews by actionability score.</p>
@@ -453,10 +625,8 @@
     {% else %}
     <p><em>No urgency scores available.</em></p>
     {% endif %}
-  </section>
 
-  <!-- Emotions -->
-  <section id="emotions">
+    <!-- Emotions -->
     <h2>Emotion Distribution</h2>
     {% if emotions.entries %}
     <table class="sortable-table">
@@ -476,11 +646,9 @@
     {% else %}
     <p><em>No emotion data available.</em></p>
     {% endif %}
-  </section>
 
-  <!-- Entities -->
-  {% if entities %}
-  <section id="entities">
+    <!-- Entities -->
+    {% if entities %}
     <h2>Mentioned Entities (companies & products)</h2>
     <table class="sortable-table">
       <thead>
@@ -492,12 +660,10 @@
       {% endfor %}
       </tbody>
     </table>
-  </section>
-  {% endif %}
+    {% endif %}
 
-  <!-- Aspect Index -->
-  {% if aspect_index %}
-  <section id="aspect-index">
+    <!-- Aspect Index -->
+    {% if aspect_index %}
     <h2>Aspect Index</h2>
     <p>Top aspects from 1–2★ reviews and the priority issue they most belong to.</p>
     <input type="text" class="filter-input" placeholder="Filter aspects…" id="aspect-filter">
@@ -521,8 +687,8 @@
       {% endfor %}
       </tbody>
     </table>
+    {% endif %}
   </section>
-  {% endif %}
 
   <footer>
     <p>
@@ -540,17 +706,43 @@
   const reportData = JSON.parse(document.getElementById('report-data').textContent);
 
   // -- Sparklines (Chart.js) ---------------------------------------------
+  // Parse "YYYY-MM-DD" as local-tz dates so labels don't show off-by-one
+  // for west-of-UTC viewers (default `new Date(s)` parses ISO as UTC).
+  function parseISODate(s) {
+    const [y, m, d] = s.split('-').map(Number);
+    return new Date(y, m - 1, d);
+  }
+  function fmtShort(d) {
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+  // Compute a bucket's date range "Feb 12 – Mar 5" given the chart's overall
+  // span and number of buckets. Used in tooltips so each bar is grounded
+  // in real time.
+  function bucketDateLabel(idx, total, earliestStr, latestStr) {
+    const start = parseISODate(earliestStr);
+    const end = parseISODate(latestStr);
+    const spanMs = end - start;
+    const bucketMs = spanMs / total;
+    const bucketStart = new Date(start.getTime() + bucketMs * idx);
+    const bucketEnd = new Date(start.getTime() + bucketMs * (idx + 1));
+    return `${fmtShort(bucketStart)} – ${fmtShort(bucketEnd)}`;
+  }
+
   reportData.issues.forEach((issue, idx) => {
     if (!issue.sparkline) return;
     const canvas = document.querySelector(`canvas[data-sparkline="${idx}"]`);
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
+    const sp = issue.sparkline;
+    const labels = sp.buckets.map((_, i) =>
+      bucketDateLabel(i, sp.buckets.length, sp.earliest, sp.latest)
+    );
     new Chart(ctx, {
       type: 'bar',
       data: {
-        labels: issue.sparkline.buckets.map((_, i) => `Bucket ${i+1}`),
+        labels: labels,
         datasets: [{
-          data: issue.sparkline.buckets,
+          data: sp.buckets,
           backgroundColor: '#3b82f6',
           borderRadius: 2,
           barThickness: 'flex',
@@ -565,8 +757,10 @@
           legend: { display: false },
           tooltip: {
             callbacks: {
-              title: (items) => `Period ${items[0].dataIndex + 1}/12`,
-              label: (item) => `${item.parsed.y} mentions`,
+              // `label` is the bucket date range (set above);
+              // surface it as the title so the tooltip leads with "when".
+              title: (items) => items[0].label,
+              label: (item) => `${item.parsed.y} mention${item.parsed.y === 1 ? '' : 's'}`,
             },
           },
         },
