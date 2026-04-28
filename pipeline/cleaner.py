@@ -19,15 +19,29 @@ def clean_review(review):
     """Clean and normalize a single review dict."""
     try:
         return {
+            "review_id":     clean_text(review.get("review_id")),
             "reviewer_name": clean_text(review.get("reviewer_name")),
             "rating":        clean_rating(review.get("rating")),
             "title":         clean_text(review.get("title")),
             "body":          clean_text(review.get("body")),
             "date":          clean_date(review.get("date")),
+            "thumbs_up":     clean_thumbs_up(review.get("thumbs_up")),
+            "app_version":   clean_text(review.get("app_version")),
         }
     except Exception as e:
         print(f"Error cleaning review: {e}")
         return None
+
+
+def clean_thumbs_up(value):
+    """Coerce thumbs_up to a non-negative int; 0 if missing or invalid."""
+    if value is None or value == "":
+        return 0
+    try:
+        n = int(value)
+        return n if n >= 0 else 0
+    except (ValueError, TypeError):
+        return 0
 
 
 def clean_text(value):

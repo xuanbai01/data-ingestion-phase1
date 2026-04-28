@@ -5,3 +5,16 @@ logs/
 exports/
 .env
 .claude
+
+# virtual environments
+.venv/
+venv/
+env/
+
+# editor / OS
+.vscode/
+.idea/
+.DS_Store
+
+# pytest
+.pytest_cache/

@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="auto">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ header.app_name }} — Review Analysis · {{ header.run_id }}</title>
+  <style>{{ pico_css | safe }}</style>
+  <style>
+    /* Layout / nav */
+    body { padding-top: 0; }
+    nav.top {
+      position: sticky; top: 0; z-index: 100;
+      background: var(--pico-background-color);
+      border-bottom: 1px solid var(--pico-muted-border-color);
+      padding: 0.6rem 1rem;
+      margin-bottom: 1.5rem;
+    }
+    nav.top ul {
+      display: flex; gap: 1rem; flex-wrap: wrap;
+      margin: 0; padding: 0; list-style: none;
+      align-items: baseline;
+    }
+    nav.top a { font-size: 0.9rem; text-decoration: none; }
+    nav.top a:hover { text-decoration: underline; }
+    nav.top .app-name { font-weight: 600; margin-right: 1rem; }
+    nav.top .theme-toggle {
+      margin-left: auto; cursor: pointer;
+      background: none; border: 1px solid var(--pico-muted-border-color);
+      padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.85rem;
+    }
+
+    /* Stat cards */
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 0.8rem; margin: 1rem 0;
+    }
+    .stat-card {
+      padding: 0.9rem 1rem;
+      border: 1px solid var(--pico-muted-border-color);
+      border-radius: var(--pico-border-radius);
+    }
+    .stat-card .value {
+      font-size: 1.6rem; font-weight: 600; display: block; line-height: 1.2;
+    }
+    .stat-card .label {
+      color: var(--pico-muted-color); font-size: 0.8rem;
+      text-transform: uppercase; letter-spacing: 0.04em;
+    }
+
+    /* Stacked sentiment bar */
+    .stacked-bar {
+      display: flex; height: 1.6rem; border-radius: 4px; overflow: hidden;
+      margin: 0.5rem 0; font-size: 0.8rem; color: white;
+    }
+    .stacked-bar > div {
+      display: flex; align-items: center; justify-content: center;
+      padding: 0 0.4rem; min-width: 0; white-space: nowrap;
+    }
+
+    /* Issue cards */
+    .issue-card {
+      border: 1px solid var(--pico-muted-border-color);
+      border-radius: var(--pico-border-radius);
+      padding: 1.5rem; margin-bottom: 1.5rem;
+      background: var(--pico-card-background-color, var(--pico-background-color));
+    }
+    .issue-card > h3 { margin-top: 0; margin-bottom: 0.2rem; }
+    .issue-card .subtitle {
+      color: var(--pico-muted-color);
+      font-style: italic; font-size: 0.95rem;
+      margin-bottom: 0.6rem;
+    }
+    .stats-row {
+      display: flex; gap: 1.5rem; flex-wrap: wrap;
+      color: var(--pico-muted-color); font-size: 0.95rem;
+      margin-bottom: 1rem;
+    }
+    .stats-row strong { color: var(--pico-color); }
+    .issue-card h4 {
+      margin: 1.2rem 0 0.5rem; font-size: 0.95rem;
+      text-transform: uppercase; letter-spacing: 0.04em;
+      color: var(--pico-muted-color);
+    }
+    .issue-card .sparkline-wrap {
+      height: 90px; position: relative; margin: 0.5rem 0;
+    }
+
+    /* Pills */
+    .pill {
+      display: inline-block;
+      background: var(--pico-secondary-background, #e9ecef);
+      color: var(--pico-color);
+      padding: 0.2rem 0.7rem; border-radius: 999px;
+      font-size: 0.85rem; margin: 0.15rem 0.15rem 0.15rem 0;
+    }
+
+    /* Run delta */
+    .delta-bucket {
+      padding: 1rem 1.2rem; border-radius: var(--pico-border-radius);
+      margin-bottom: 1rem; border: 1px solid var(--pico-muted-border-color);
+      border-left-width: 4px;
+    }
+    .delta-bucket.escalating { border-left-color: #d9534f; }
+    .delta-bucket.improving  { border-left-color: #5cb85c; }
+    .delta-bucket.new        { border-left-color: #5bc0de; }
+    .delta-bucket.resolved   { border-left-color: #888; }
+    .delta-bucket h4 { margin-top: 0; margin-bottom: 0.6rem; }
+    .delta-bucket ul { margin: 0; padding-left: 1.2rem; }
+    .delta-bucket li { margin: 0.3rem 0; }
+    .delta-bucket .change {
+      font-weight: 600; font-variant-numeric: tabular-nums;
+    }
+    .delta-bucket.escalating .change { color: #d9534f; }
+    .delta-bucket.improving  .change { color: #5cb85c; }
+
+    /* Sortable tables */
+    .sortable-table th { cursor: pointer; user-select: none; }
+    .sortable-table th:hover { background: var(--pico-secondary-background, rgba(0,0,0,0.05)); }
+    .sortable-table th::after { content: " ↕"; opacity: 0.3; font-size: 0.8em; }
+    .sortable-table th.sort-asc::after { content: " ↑"; opacity: 1; }
+    .sortable-table th.sort-desc::after { content: " ↓"; opacity: 1; }
+
+    /* ABSA bars */
+    .absa-bar-row {
+      display: grid; grid-template-columns: 8rem 1fr 4rem;
+      gap: 0.5rem; align-items: center; margin: 0.3rem 0;
+      font-size: 0.9rem;
+    }
+    .absa-bar {
+      height: 1.2rem; border-radius: 3px;
+      display: flex; align-items: center;
+      padding: 0 0.4rem; color: white; font-size: 0.8rem;
+    }
+    .absa-bar.loved   { background: #5cb85c; }
+    .absa-bar.hated   { background: #d9534f; }
+
+    /* Aspect index filter input */
+    .filter-input {
+      max-width: 320px; margin-bottom: 0.8rem;
+    }
+
+    /* Footer */
+    footer {
+      margin-top: 3rem; padding-top: 1rem;
+      border-top: 1px solid var(--pico-muted-border-color);
+      color: var(--pico-muted-color); font-size: 0.85rem;
+    }
+
+    /* Compact code spans for run IDs */
+    code { font-size: 0.85em; }
+  </style>
+</head>
+<body>
+<nav class="top">
+  <ul>
+    <li class="app-name">{{ header.app_name }}</li>
+    <li><a href="#overview">Overview</a></li>
+    <li><a href="#priority">Priority Issues</a></li>
+    {% if not run_delta.omitted %}<li><a href="#delta">Run Delta</a></li>{% endif %}
+    {% if positives.entries %}<li><a href="#positives">Positives</a></li>{% endif %}
+    {% if absa.loved or absa.hated %}<li><a href="#absa">ABSA</a></li>{% endif %}
+    <li><a href="#urgent">Urgent</a></li>
+    <li><a href="#emotions">Emotions</a></li>
+    {% if entities %}<li><a href="#entities">Entities</a></li>{% endif %}
+    {% if aspect_index %}<li><a href="#aspect-index">Aspect Index</a></li>{% endif %}
+    <li><button class="theme-toggle" onclick="toggleTheme()">Theme</button></li>
+  </ul>
+</nav>
+
+<main class="container">
+  <header>
+    <h1>Review Analysis Report — {{ header.app_name }}</h1>
+    <p>{{ "{:,}".format(header.review_count) }} reviews · generated {{ header.generated_at }} · run <code>{{ header.run_id }}</code></p>
+  </header>
+
+  <!-- Overview -->
+  <section id="overview">
+    <h2>Overall Sentiment</h2>
+    <div class="stat-grid">
+      <div class="stat-card">
+        <span class="label">Avg rating</span>
+        <span class="value">{{ "%.2f"|format(overall.avg_rating) }} <small>/ 5</small></span>
+      </div>
+      <div class="stat-card">
+        <span class="label">Avg polarity</span>
+        <span class="value">{{ "%+.2f"|format(overall.avg_polarity) }}</span>
+      </div>
+      <div class="stat-card">
+        <span class="label">% positive</span>
+        <span class="value">{{ "%.0f"|format(overall.pos_pct * 100) }}%</span>
+      </div>
+      <div class="stat-card">
+        <span class="label">% negative</span>
+        <span class="value">{{ "%.0f"|format(overall.neg_pct * 100) }}%</span>
+      </div>
+      <div class="stat-card">
+        <span class="label">% obj. negative</span>
+        <span class="value">{{ "%.0f"|format(overall.obj_neg_pct * 100) }}%</span>
+      </div>
+      <div class="stat-card">
+        <span class="label">% subj. negative</span>
+        <span class="value">{{ "%.0f"|format(overall.subj_neg_pct * 100) }}%</span>
+      </div>
+    </div>
+
+    <h4>Polarity distribution</h4>
+    <div class="stacked-bar" title="positive / neutral / negative">
+      {% if overall.pos_count %}<div style="background:#5cb85c; flex: {{ overall.pos_count }}">{{ overall.pos_count }} positive</div>{% endif %}
+      {% if overall.neutral_count %}<div style="background:#aaa; flex: {{ overall.neutral_count }}">{{ overall.neutral_count }} neutral</div>{% endif %}
+      {% if overall.neg_count %}<div style="background:#d9534f; flex: {{ overall.neg_count }}">{{ overall.neg_count }} negative</div>{% endif %}
+    </div>
+  </section>
+
+  <!-- Priority Issues -->
+  <section id="priority">
+    <h2>Priority Issues</h2>
+    <p>Negative-leaning clusters ranked by composite priority — weighted by volume, severity, urgency, and intense-emotion share (anger / disgust / fear).</p>
+
+    {% if issues %}
+    <table class="sortable-table">
+      <thead>
+        <tr>
+          <th>#</th><th>Issue</th><th>Reviews</th><th>Avg rating</th>
+          <th>Bug %</th><th>Priority</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for issue in issues %}
+        <tr>
+          <td>{{ issue.rank }}</td>
+          <td><a href="#issue-{{ issue.rank }}">{{ issue.label }}</a></td>
+          <td>{{ issue.count }}</td>
+          <td>{{ "%.1f"|format(issue.avg_rating) }}</td>
+          <td>{{ "%.0f"|format(issue.bug_complaint.obj_share * 100) }}%</td>
+          <td>{{ "%.2f"|format(issue.score) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {% for issue in issues %}
+    <article class="issue-card" id="issue-{{ issue.rank }}">
+      <h3>Issue {{ issue.rank }} — {{ issue.label }}</h3>
+      {% if issue.label_is_llm %}
+      <div class="subtitle">{{ issue.aspect_string }}</div>
+      {% endif %}
+      <div class="stats-row">
+        <span><strong>{{ "{:,}".format(issue.count) }}</strong> reviews</span>
+        <span>avg rating <strong>{{ "%.1f"|format(issue.avg_rating) }}</strong></span>
+        <span>avg urgency <strong>{{ "%.2f"|format(issue.avg_urgency) }}</strong></span>
+        <span>priority <strong>{{ "%.2f"|format(issue.score) }}</strong></span>
+      </div>
+
+      {% if issue.sparkline %}
+      <h4>Trend ({{ issue.sparkline.earliest }} → {{ issue.sparkline.latest }})</h4>
+      <div class="sparkline-wrap"><canvas data-sparkline="{{ loop.index0 }}"></canvas></div>
+      {% endif %}
+
+      <h4>Bug vs complaint split</h4>
+      <div class="stacked-bar">
+        {% if issue.bug_complaint.obj_count %}<div style="background:#d9534f; flex: {{ issue.bug_complaint.obj_count }}" title="{{ issue.bug_complaint.obj_count }} objective (bug-like)">
+          {% if issue.bug_complaint.obj_share >= 0.12 %}{{ "%.0f"|format(issue.bug_complaint.obj_share * 100) }}% bugs{% endif %}
+        </div>{% endif %}
+        {% if issue.bug_complaint.subj_count %}<div style="background:#f0ad4e; flex: {{ issue.bug_complaint.subj_count }}" title="{{ issue.bug_complaint.subj_count }} subjective (complaint-like)">
+          {% if issue.bug_complaint.subj_share >= 0.12 %}{{ "%.0f"|format(issue.bug_complaint.subj_share * 100) }}% complaints{% endif %}
+        </div>{% endif %}
+      </div>
+      <p style="margin-top:0.5rem">
+        <strong>Bug aspects:</strong> {{ issue.bug_complaint.obj_aspects | join(", ") if issue.bug_complaint.obj_aspects else "—" }}<br>
+        <strong>Complaint aspects:</strong> {{ issue.bug_complaint.subj_aspects | join(", ") if issue.bug_complaint.subj_aspects else "—" }}
+      </p>
+
+      {% if issue.emotions %}
+      <h4>Emotions</h4>
+      <p>
+      {% for e in issue.emotions[:5] %}
+        <span class="pill">{{ e.label }} {{ "%.0f"|format(e.share * 100) }}%</span>
+      {% endfor %}
+      </p>
+      {% endif %}
+
+      {% if issue.entities %}
+      <h4>Mentioned entities</h4>
+      <p>
+      {% for ent in issue.entities %}
+        <span class="pill">{{ ent.text }} ({{ ent.count }})</span>
+      {% endfor %}
+      </p>
+      {% endif %}
+
+      {% if issue.app_versions %}
+      <h4>By app version</h4>
+      <p>
+      {% for v in issue.app_versions %}
+        <span class="pill">{{ v.version }} ({{ v.count }})</span>
+      {% endfor %}
+      </p>
+      {% endif %}
+
+      {% if issue.representative_reviews %}
+      <details>
+        <summary><strong>Representative reviews</strong> ({{ issue.representative_reviews|length }})</summary>
+        <ul>
+        {% for r in issue.representative_reviews %}
+          <li>{{ r }}</li>
+        {% endfor %}
+        </ul>
+      </details>
+      {% endif %}
+    </article>
+    {% endfor %}
+    {% else %}
+    <p><em>No negative-leaning clusters detected.</em></p>
+    {% endif %}
+  </section>
+
+  <!-- Run Delta -->
+  {% if not run_delta.omitted %}
+  <section id="delta">
+    <h2>Run Delta</h2>
+    {% if run_delta.first_run %}
+    <p><em>No prior run on file for this app — this is the baseline. The next run will compare against this snapshot.</em></p>
+    {% elif not run_delta.escalating and not run_delta.improving and not run_delta.new and not run_delta.resolved %}
+    <p>Compared to prior run <code>{{ run_delta.prior_run_id }}</code>. <em>No significant changes since prior run.</em></p>
+    {% else %}
+    <p>Compared to prior run <code>{{ run_delta.prior_run_id }}</code>. Issues that grew, shrank, appeared, or disappeared since then.</p>
+
+    {% if run_delta.escalating %}
+    <div class="delta-bucket escalating">
+      <h4>Escalating (>20% increase)</h4>
+      <ul>
+      {% for e in run_delta.escalating %}
+        <li>{{ e.label }} — {{ e.prior_count }} → {{ e.current_count }} <span class="change">+{{ "%.0f"|format(e.pct_change) }}%</span></li>
+      {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    {% if run_delta.improving %}
+    <div class="delta-bucket improving">
+      <h4>Improving (>20% decrease)</h4>
+      <ul>
+      {% for e in run_delta.improving %}
+        <li>{{ e.label }} — {{ e.prior_count }} → {{ e.current_count }} <span class="change">{{ "%.0f"|format(e.pct_change) }}%</span></li>
+      {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    {% if run_delta.new %}
+    <div class="delta-bucket new">
+      <h4>New (no prior match)</h4>
+      <ul>
+      {% for e in run_delta.new %}
+        <li>{{ e.label }} — {{ e.current_count }} reviews this run</li>
+      {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    {% if run_delta.resolved %}
+    <div class="delta-bucket resolved">
+      <h4>Resolved (no current match)</h4>
+      <ul>
+      {% for e in run_delta.resolved %}
+        <li>{{ e.label }} — was {{ e.prior_count }} reviews last run</li>
+      {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+    {% endif %}
+  </section>
+  {% endif %}
+
+  <!-- Top Positives -->
+  {% if positives.entries %}
+  <section id="positives">
+    <h2>Top Positives</h2>
+    <p>Clusters where users express satisfaction — useful for marketing and identifying what to preserve.</p>
+    <table class="sortable-table">
+      <thead>
+        <tr><th>Cluster</th><th>Top aspects</th><th>Reviews</th><th>Avg rating</th></tr>
+      </thead>
+      <tbody>
+      {% for p in positives.entries %}
+        <tr>
+          <td>{{ p.cluster_id }}</td>
+          <td>{{ p.label }}</td>
+          <td>{{ p.count }}</td>
+          <td>{{ "%.1f"|format(p.avg_rating) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
+
+  <!-- ABSA -->
+  {% if absa.loved or absa.hated %}
+  <section id="absa">
+    <h2>Aspect Sentiment (ABSA)</h2>
+    <p>Per-aspect polarity scored independently for each (review, aspect) pair by DeBERTa ABSA. Ranked by avg polarity × log(mentions).</p>
+
+    {% if absa.loved %}
+    <h3>Top Loved Features</h3>
+    {% set max_loved = (absa.loved | map(attribute='avg_polarity') | max) %}
+    {% for it in absa.loved %}
+    <div class="absa-bar-row">
+      <span>{{ it.aspect }}</span>
+      <div class="absa-bar loved" style="width: {{ ((it.avg_polarity / max_loved) * 100) }}%"
+           title="avg polarity {{ "%+.2f"|format(it.avg_polarity) }}">+{{ "%.2f"|format(it.avg_polarity) }}</div>
+      <span>{{ it.count }} mentions</span>
+    </div>
+    {% endfor %}
+    {% endif %}
+
+    {% if absa.hated %}
+    <h3>Top Hated Features</h3>
+    {% set min_hated = (absa.hated | map(attribute='avg_polarity') | min) %}
+    {% for it in absa.hated %}
+    <div class="absa-bar-row">
+      <span>{{ it.aspect }}</span>
+      <div class="absa-bar hated" style="width: {{ ((it.avg_polarity / min_hated) * 100) }}%"
+           title="avg polarity {{ "%+.2f"|format(it.avg_polarity) }}">{{ "%.2f"|format(it.avg_polarity) }}</div>
+      <span>{{ it.count }} mentions</span>
+    </div>
+    {% endfor %}
+    {% endif %}
+  </section>
+  {% endif %}
+
+  <!-- Urgent reviews -->
+  <section id="urgent">
+    <h2>Most Urgent Reviews</h2>
+    {% if urgent %}
+    <p>Top reviews by actionability score.</p>
+    <table class="sortable-table">
+      <thead>
+        <tr><th>Urgency</th><th>Rating</th><th>Emotion</th><th>Review</th></tr>
+      </thead>
+      <tbody>
+      {% for r in urgent %}
+        <tr>
+          <td>{{ "%.2f"|format(r.urgency) }}</td>
+          <td>{{ r.rating if r.rating is not none else "?" }}</td>
+          <td>{{ r.emotion or "?" }}</td>
+          <td>{{ r.body }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p><em>No urgency scores available.</em></p>
+    {% endif %}
+  </section>
+
+  <!-- Emotions -->
+  <section id="emotions">
+    <h2>Emotion Distribution</h2>
+    {% if emotions.entries %}
+    <table class="sortable-table">
+      <thead>
+        <tr><th>Emotion</th><th>Count</th><th>Share</th></tr>
+      </thead>
+      <tbody>
+      {% for e in emotions.entries %}
+        <tr>
+          <td>{{ e.emotion }}</td>
+          <td>{{ e.count }}</td>
+          <td>{{ "%.0f"|format(e.share * 100) }}%</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p><em>No emotion data available.</em></p>
+    {% endif %}
+  </section>
+
+  <!-- Entities -->
+  {% if entities %}
+  <section id="entities">
+    <h2>Mentioned Entities (companies & products)</h2>
+    <table class="sortable-table">
+      <thead>
+        <tr><th>Entity</th><th>Mentions</th></tr>
+      </thead>
+      <tbody>
+      {% for e in entities %}
+        <tr><td>{{ e.text }}</td><td>{{ e.count }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
+
+  <!-- Aspect Index -->
+  {% if aspect_index %}
+  <section id="aspect-index">
+    <h2>Aspect Index</h2>
+    <p>Top aspects from 1–2★ reviews and the priority issue they most belong to.</p>
+    <input type="text" class="filter-input" placeholder="Filter aspects…" id="aspect-filter">
+    <table class="sortable-table" id="aspect-index-table">
+      <thead>
+        <tr><th>Aspect</th><th>Mentions in 1-2★</th><th>Primary issue</th></tr>
+      </thead>
+      <tbody>
+      {% for a in aspect_index %}
+        <tr>
+          <td>{{ a.aspect }}</td>
+          <td>{{ a.neg_count }}</td>
+          <td>
+            {% if a.primary_issue_rank %}
+              <a href="#issue-{{ a.primary_issue_rank }}">Issue {{ a.primary_issue_rank }}</a>
+            {% elif a.primary_cluster_id is not none %}
+              cluster {{ a.primary_cluster_id }} (not in top issues)
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
+
+  <footer>
+    <p>
+      {{ "{:,}".format(feature_summary.n_reviews) }} reviews ·
+      {{ "{:,}".format(feature_summary.unique_aspects) }} unique aspects ·
+      {{ feature_summary.themes }} themes ·
+      {{ feature_summary.n_issues }} issues
+    </p>
+  </footer>
+</main>
+
+<script>{{ chart_js | safe }}</script>
+<script id="report-data" type="application/json">{{ report_data | tojson }}</script>
+<script>
+  const reportData = JSON.parse(document.getElementById('report-data').textContent);
+
+  // -- Sparklines (Chart.js) ---------------------------------------------
+  reportData.issues.forEach((issue, idx) => {
+    if (!issue.sparkline) return;
+    const canvas = document.querySelector(`canvas[data-sparkline="${idx}"]`);
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: issue.sparkline.buckets.map((_, i) => `Bucket ${i+1}`),
+        datasets: [{
+          data: issue.sparkline.buckets,
+          backgroundColor: '#3b82f6',
+          borderRadius: 2,
+          barThickness: 'flex',
+          maxBarThickness: 40,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 0 },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              title: (items) => `Period ${items[0].dataIndex + 1}/12`,
+              label: (item) => `${item.parsed.y} mentions`,
+            },
+          },
+        },
+        scales: {
+          x: { display: false },
+          y: { beginAtZero: true, ticks: { precision: 0 } },
+        },
+      },
+    });
+  });
+
+  // -- Sortable tables ---------------------------------------------------
+  document.querySelectorAll('.sortable-table').forEach(table => {
+    const headers = Array.from(table.querySelectorAll('thead th'));
+    headers.forEach((th, idx) => {
+      th.addEventListener('click', () => {
+        const tbody = table.querySelector('tbody');
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        const wasAsc = th.classList.contains('sort-asc');
+        headers.forEach(h => h.classList.remove('sort-asc', 'sort-desc'));
+        th.classList.add(wasAsc ? 'sort-desc' : 'sort-asc');
+        const dir = wasAsc ? -1 : 1;
+        rows.sort((a, b) => {
+          const aText = a.cells[idx].textContent.trim();
+          const bText = b.cells[idx].textContent.trim();
+          // Try numeric comparison first
+          const aNum = parseFloat(aText.replace(/[%,]/g, ''));
+          const bNum = parseFloat(bText.replace(/[%,]/g, ''));
+          if (!isNaN(aNum) && !isNaN(bNum)) return (aNum - bNum) * dir;
+          return aText.localeCompare(bText) * dir;
+        });
+        rows.forEach(r => tbody.appendChild(r));
+      });
+    });
+  });
+
+  // -- Aspect index filter -----------------------------------------------
+  const aspectFilter = document.getElementById('aspect-filter');
+  if (aspectFilter) {
+    aspectFilter.addEventListener('input', (e) => {
+      const q = e.target.value.toLowerCase().trim();
+      const rows = document.querySelectorAll('#aspect-index-table tbody tr');
+      rows.forEach(row => {
+        const aspect = row.cells[0].textContent.toLowerCase();
+        row.style.display = !q || aspect.includes(q) ? '' : 'none';
+      });
+    });
+  }
+
+  // -- Theme toggle ------------------------------------------------------
+  function toggleTheme() {
+    const current = document.documentElement.getAttribute('data-theme') || 'auto';
+    const next = current === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    try { localStorage.setItem('report-theme', next); } catch (e) { /* ignore */ }
+  }
+  try {
+    const saved = localStorage.getItem('report-theme');
+    if (saved) document.documentElement.setAttribute('data-theme', saved);
+  } catch (e) { /* ignore */ }
+</script>
+</body>
+</html>

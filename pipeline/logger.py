@@ -1,6 +1,6 @@
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 LOG_DIR = "logs"
 
@@ -11,7 +11,7 @@ def setup_logger():
 
     log_filename = os.path.join(
         LOG_DIR,
-        f"pipeline_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.log"
+        f"pipeline_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.log"
     )
 
     logger = logging.getLogger("pipeline")

@@ -4,6 +4,13 @@ google-play-scraper
 textblob
 spacy
 sentence-transformers
-transformers
+# transformers >=4.50 refuses to load .bin weight files (CVE-2025-32434 mitigation).
+# The j-hartmann emotion model only ships .bin, so we pin below that until either
+# the model is reuploaded with safetensors or we swap to a different emotion model.
+transformers<4.50
+sentencepiece  # required by DeBERTa-v3 tokenizer (Phase III ABSA model)
+protobuf       # required alongside sentencepiece to convert the spm.model
 scikit-learn
 numpy
+anthropic  # LLM-generated cluster labels (Phase V)
+jinja2     # HTML report templating (Phase VI)
