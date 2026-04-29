@@ -23,10 +23,36 @@
     nav.top a { font-size: 0.9rem; text-decoration: none; }
     nav.top a:hover { text-decoration: underline; }
     nav.top .app-name { font-weight: 600; margin-right: 1rem; }
+    /* Push the toggle LI to the far right of the nav. margin-left:auto has
+       to live on the flex item (the LI), not the button inside it. */
+    nav.top li.nav-end { margin-left: auto; }
+
+    /* Explicit color override. Pico does something subtle: inside button
+       scope it redefines --pico-color itself to --pico-primary-inverse
+       (white in light theme). So `color: var(--pico-color)` resolves to
+       white inside a button regardless of theme — invisible on our
+       transparent background.
+       Fix: use `inherit` so the button takes color from the surrounding
+       nav/body chain, where --pico-color still has its proper value. */
     nav.top .theme-toggle {
-      margin-left: auto; cursor: pointer;
-      background: none; border: 1px solid var(--pico-muted-border-color);
-      padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.85rem;
+      cursor: pointer;
+      background: transparent;
+      color: inherit;
+      border: 1px solid var(--pico-muted-border-color);
+      padding: 0.2rem 0.7rem;
+      border-radius: 4px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      line-height: 1.4;
+    }
+    nav.top .theme-toggle:hover {
+      background: var(--pico-secondary-background, rgba(0,0,0,0.05));
+      border-color: currentColor;
+      color: inherit;
+    }
+    nav.top .theme-toggle:focus-visible {
+      outline: 2px solid var(--pico-primary, #3b82f6);
+      outline-offset: 2px;
     }
 
     /* Stat cards */
@@ -114,6 +140,40 @@
       }
     }
 
+    /* Run Delta — compact "stable" state (Phase X). When nothing changed,
+       the section collapses to a single line so it doesn't claim the same
+       visual real estate as the buckets-and-lists rich state. */
+    section#delta.stable {
+      padding: 0.6rem 1rem;
+      border-left: 3px solid #5cb85c;
+      background: rgba(92, 184, 92, 0.05);
+      border-radius: var(--pico-border-radius);
+      margin: 1rem 0 1.5rem;
+    }
+    .stable-line { margin: 0; line-height: 1.6; }
+    .stable-line .badge {
+      display: inline-block;
+      padding: 0.1rem 0.55rem;
+      font-size: 0.8rem;
+      font-weight: 500;
+      border-radius: 999px;
+      margin: 0 0.3rem;
+    }
+    .stable-line .badge.stable {
+      background: #5cb85c; color: white;
+    }
+    .stable-line .muted {
+      color: var(--pico-muted-color);
+    }
+    [data-theme="dark"] section#delta.stable {
+      background: rgba(92, 184, 92, 0.1);
+    }
+    @media (prefers-color-scheme: dark) {
+      html:not([data-theme="light"]) section#delta.stable {
+        background: rgba(92, 184, 92, 0.1);
+      }
+    }
+
     /* Run delta */
     .delta-bucket {
       padding: 1rem 1.2rem; border-radius: var(--pico-border-radius);
@@ -140,6 +200,14 @@
     .sortable-table th.sort-asc::after { content: " ↑"; opacity: 1; }
     .sortable-table th.sort-desc::after { content: " ↓"; opacity: 1; }
 
+    /* Trend indicators in the priority leaderboard (Phase X) */
+    .trend { font-size: 0.85rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .trend-up      { color: #d9534f; font-weight: 600; }
+    .trend-down    { color: #5cb85c; font-weight: 600; }
+    .trend-new     { color: #5bc0de; font-weight: 600; }
+    .trend-stable  { color: var(--pico-muted-color); }
+    .trend-none    { color: var(--pico-muted-color); }
+
     /* ABSA bars */
     .absa-bar-row {
       display: grid; grid-template-columns: 8rem 1fr 4rem;
@@ -159,11 +227,41 @@
       max-width: 320px; margin-bottom: 0.8rem;
     }
 
-    /* Footer */
+    /* Footer (Phase IX: condensed one-line stats) */
     footer {
-      margin-top: 3rem; padding-top: 1rem;
+      margin-top: 2rem; padding-top: 1rem;
       border-top: 1px solid var(--pico-muted-border-color);
-      color: var(--pico-muted-color); font-size: 0.85rem;
+      color: var(--pico-muted-color); font-size: 0.9rem;
+    }
+    footer.by-the-numbers p {
+      margin: 0; line-height: 1.5;
+    }
+    footer.by-the-numbers strong {
+      color: var(--pico-color);
+      text-transform: uppercase;
+      font-size: 0.8em;
+      letter-spacing: 0.06em;
+      margin-right: 0.4rem;
+    }
+
+    /* Section narrative — one-sentence LLM lead under a question heading
+       in the Detailed Analysis area (Phase IX). */
+    .section-narrative {
+      color: var(--pico-color);
+      line-height: 1.5;
+      margin: 0.4rem 0 1rem;
+      max-width: 70ch;
+    }
+    .section-narrative strong {
+      color: #1e3a8a;
+    }
+    [data-theme="dark"] .section-narrative strong {
+      color: #93c5fd;
+    }
+    @media (prefers-color-scheme: dark) {
+      html:not([data-theme="light"]) .section-narrative strong {
+        color: #93c5fd;
+      }
     }
 
     /* Compact code spans for run IDs */
@@ -217,6 +315,46 @@
     }
     details.more-issues > summary:hover {
       background: var(--pico-muted-border-color);
+    }
+
+    /* Key Takeaways section (Phase VIII) — the "so what?" layer that
+       connects the data to action. Visually weighty: this is the report's
+       thesis, evidence below. */
+    section#takeaways {
+      background: var(--pico-card-background-color, #f8fafc);
+      border-left: 4px solid #3b82f6;
+      border-radius: var(--pico-border-radius);
+      padding: 1.2rem 1.5rem;
+      margin: 1.5rem 0 2rem;
+    }
+    section#takeaways h2 {
+      margin-top: 0; margin-bottom: 0.6rem;
+      font-size: 1.2rem;
+      color: var(--pico-color);
+    }
+    section#takeaways .takeaways-list {
+      margin: 0; padding-left: 1.4rem;
+    }
+    section#takeaways .takeaways-list li {
+      margin: 0.55rem 0; line-height: 1.5;
+      color: var(--pico-color);
+    }
+    section#takeaways .takeaways-list li strong {
+      color: #1e3a8a;  /* match the pill color so the "what to do" reads */
+    }
+    [data-theme="dark"] section#takeaways {
+      background: rgba(59, 130, 246, 0.08);
+    }
+    [data-theme="dark"] section#takeaways .takeaways-list li strong {
+      color: #93c5fd;
+    }
+    @media (prefers-color-scheme: dark) {
+      html:not([data-theme="light"]) section#takeaways {
+        background: rgba(59, 130, 246, 0.08);
+      }
+      html:not([data-theme="light"]) section#takeaways .takeaways-list li strong {
+        color: #93c5fd;
+      }
     }
 
     /* Editorial-pass card layout — quieter, more story-shaped (Phase VII v2) */
@@ -290,10 +428,11 @@
 <nav class="top">
   <ul>
     <li class="app-name">{{ header.app_name }}</li>
+    {% if takeaways.bullets %}<li><a href="#takeaways">Takeaways</a></li>{% endif %}
     {% if not run_delta.omitted %}<li><a href="#delta">Run Delta</a></li>{% endif %}
     <li><a href="#priority">Priority Issues</a></li>
     <li><a href="#detailed">Detailed analysis</a></li>
-    <li><button class="theme-toggle" onclick="toggleTheme()">Theme</button></li>
+    <li class="nav-end"><button class="theme-toggle" onclick="toggleTheme()">Theme</button></li>
   </ul>
 </nav>
 
@@ -327,16 +466,40 @@
     </div>
   </section>
 
-  <!-- Run Delta — moved to lead position (Phase VII) since it's the most
-       valuable answer the report gives. Renders even on first runs (with
-       a baseline placeholder) so the section's existence isn't a surprise. -->
+  <!-- Key takeaways — the "so what?" layer (Phase VIII). LLM-synthesized
+       3-5 actionable bullets, leading the report so readers see the thesis
+       before the evidence. Section omits entirely on missing API key /
+       LLM error, so the rest of the report is unaffected. -->
+  {% if takeaways.bullets %}
+  <section id="takeaways">
+    <h2>Key takeaways</h2>
+    <ul class="takeaways-list">
+      {% for bullet in takeaways.bullets %}
+      <li>{{ bullet | bold_md_to_html | safe }}</li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  <!-- Run Delta — promoted to lead-of-evidence position (Phase VII) since
+       it's the most valuable answer the report gives. Renders even on
+       first runs (with a baseline placeholder) so the section's existence
+       isn't a surprise. -->
   {% if not run_delta.omitted %}
-  <section id="delta">
+    {% set is_stable = not run_delta.first_run and not (run_delta.escalating or run_delta.improving or run_delta.new or run_delta.resolved) %}
+  <section id="delta"{% if is_stable %} class="stable"{% endif %}>
+    {% if is_stable %}
+    {# Compact one-line state when nothing changed. Doesn't claim full
+       section real estate on every "no changes" re-run. #}
+    <p class="stable-line">
+      <strong>Run Delta —</strong>
+      <span class="badge stable">stable</span>
+      <span class="muted">no significant changes vs prior run <code>{{ run_delta.prior_run_id }}</code></span>
+    </p>
+    {% else %}
     <h2>Run Delta</h2>
     {% if run_delta.first_run %}
     <p><em>No prior run on file for this app — this is the baseline. The next run will compare against this snapshot.</em></p>
-    {% elif not run_delta.escalating and not run_delta.improving and not run_delta.new and not run_delta.resolved %}
-    <p>Compared to prior run <code>{{ run_delta.prior_run_id }}</code>. <em>No significant changes since prior run.</em></p>
     {% else %}
     <p>Compared to prior run <code>{{ run_delta.prior_run_id }}</code>. Issues that grew, shrank, appeared, or disappeared since then.</p>
 
@@ -383,7 +546,8 @@
       </ul>
     </div>
     {% endif %}
-    {% endif %}
+    {% endif %}{# closes first_run / has-changes #}
+    {% endif %}{# closes is_stable / not-stable #}
   </section>
   {% endif %}
 
@@ -398,7 +562,8 @@
     <table class="sortable-table">
       <thead>
         <tr>
-          <th>#</th><th>Issue</th><th>Reviews</th><th>Avg rating</th><th>Priority</th>
+          <th>#</th><th>Issue</th><th>Reviews</th><th>Avg rating</th>
+          <th>Trend</th><th>Priority</th>
         </tr>
       </thead>
       <tbody>
@@ -408,6 +573,20 @@
           <td><a href="#issue-{{ issue.rank }}">{{ issue.label }}</a></td>
           <td>{{ issue.count }}</td>
           <td>{{ "%.1f"|format(issue.avg_rating) }}</td>
+          <td>
+            {% set t = issue.trend %}
+            {% if t and t.classification == "escalating" %}
+              <span class="trend trend-up" title="escalating since prior run">▲ +{{ "%.0f"|format(t.pct_change) }}%</span>
+            {% elif t and t.classification == "improving" %}
+              <span class="trend trend-down" title="improving since prior run">▼ {{ "%.0f"|format(t.pct_change) }}%</span>
+            {% elif t and t.classification == "new" %}
+              <span class="trend trend-new" title="new this run, no prior match">✦ new</span>
+            {% elif t and t.classification == "stable" %}
+              <span class="trend trend-stable" title="no significant change">— stable</span>
+            {% else %}
+              <span class="trend trend-none" title="no comparison data">—</span>
+            {% endif %}
+          </td>
           <td>{{ "%.2f"|format(issue.score) }}</td>
         </tr>
         {% endfor %}
@@ -509,54 +688,26 @@
     {% endif %}
   </section>
 
-  <!-- Detailed analysis — supporting views, visually demoted (Phase VII). -->
+  <!-- Detailed analysis (Phase IX). The global Most Urgent Reviews,
+       Emotion Distribution, Mentioned Entities, and Aspect Index tables
+       were dropped — their per-issue equivalents inside the cards above
+       carry the useful signal, the global aggregates were noise. The
+       Overall Sentiment 6-card grid is condensed into the "By the numbers"
+       footer at the end. What remains is counter-signal not visible
+       elsewhere: positives clusters, and ABSA's loved/hated view. Each
+       gets a one-sentence LLM lead in place of a data-only table dump. -->
   <hr class="detailed-divider">
   <section id="detailed">
     <h2>Detailed analysis</h2>
-    <p>Supporting views — sentiment distribution, ABSA aspect-level polarity, urgent reviews, emotion / entity / aspect breakdowns. Useful for drill-down; not required reading.</p>
 
-    <!-- Overall Sentiment (moved here from the top in Phase VII) -->
-    <h2>Overall Sentiment</h2>
-    <div class="stat-grid">
-      <div class="stat-card">
-        <span class="label">Avg rating</span>
-        <span class="value">{{ "%.2f"|format(overall.avg_rating) }} <small>/ 5</small></span>
-      </div>
-      <div class="stat-card">
-        <span class="label">Avg polarity</span>
-        <span class="value">{{ "%+.2f"|format(overall.avg_polarity) }}</span>
-      </div>
-      <div class="stat-card">
-        <span class="label">% positive</span>
-        <span class="value">{{ "%.0f"|format(overall.pos_pct * 100) }}%</span>
-      </div>
-      <div class="stat-card">
-        <span class="label">% negative</span>
-        <span class="value">{{ "%.0f"|format(overall.neg_pct * 100) }}%</span>
-      </div>
-      <div class="stat-card">
-        <span class="label">% obj. negative</span>
-        <span class="value">{{ "%.0f"|format(overall.obj_neg_pct * 100) }}%</span>
-      </div>
-      <div class="stat-card">
-        <span class="label">% subj. negative</span>
-        <span class="value">{{ "%.0f"|format(overall.subj_neg_pct * 100) }}%</span>
-      </div>
-    </div>
-    <h4>Polarity distribution</h4>
-    <div class="stacked-bar" title="positive / neutral / negative">
-      {% if overall.pos_count %}<div style="background:#5cb85c; flex: {{ overall.pos_count }}">{{ overall.pos_count }} positive</div>{% endif %}
-      {% if overall.neutral_count %}<div style="background:#aaa; flex: {{ overall.neutral_count }}">{{ overall.neutral_count }} neutral</div>{% endif %}
-      {% if overall.neg_count %}<div style="background:#d9534f; flex: {{ overall.neg_count }}">{{ overall.neg_count }} negative</div>{% endif %}
-    </div>
-
-    <!-- Top Positives -->
     {% if positives.entries %}
-    <h2>Top Positives</h2>
-    <p>Clusters where users express satisfaction — useful for marketing and identifying what to preserve.</p>
+    <h3>What are users happy about?</h3>
+    {% if positives.narrative %}
+    <p class="section-narrative">{{ positives.narrative | bold_md_to_html | safe }}</p>
+    {% endif %}
     <table class="sortable-table">
       <thead>
-        <tr><th>Cluster</th><th>Top aspects</th><th>Reviews</th><th>Avg rating</th></tr>
+        <tr><th>Theme</th><th>Top aspects</th><th>Reviews</th><th>Avg rating</th></tr>
       </thead>
       <tbody>
       {% for p in positives.entries %}
@@ -571,13 +722,14 @@
     </table>
     {% endif %}
 
-    <!-- ABSA -->
     {% if absa.loved or absa.hated %}
-    <h2>Aspect Sentiment (ABSA)</h2>
-    <p>Per-aspect polarity scored independently for each (review, aspect) pair by DeBERTa ABSA. Ranked by avg polarity × log(mentions).</p>
+    <h3>Which features are loved vs hated?</h3>
+    {% if absa.narrative %}
+    <p class="section-narrative">{{ absa.narrative | bold_md_to_html | safe }}</p>
+    {% endif %}
 
     {% if absa.loved %}
-    <h3>Top Loved Features</h3>
+    <h4>Loved</h4>
     {% set max_loved = (absa.loved | map(attribute='avg_polarity') | max) %}
     {% for it in absa.loved %}
     <div class="absa-bar-row">
@@ -590,7 +742,7 @@
     {% endif %}
 
     {% if absa.hated %}
-    <h3>Top Hated Features</h3>
+    <h4>Hated</h4>
     {% set min_hated = (absa.hated | map(attribute='avg_polarity') | min) %}
     {% for it in absa.hated %}
     <div class="absa-bar-row">
@@ -602,100 +754,23 @@
     {% endfor %}
     {% endif %}
     {% endif %}
-
-    <!-- Urgent reviews -->
-    <h2>Most Urgent Reviews</h2>
-    {% if urgent %}
-    <p>Top reviews by actionability score.</p>
-    <table class="sortable-table">
-      <thead>
-        <tr><th>Urgency</th><th>Rating</th><th>Emotion</th><th>Review</th></tr>
-      </thead>
-      <tbody>
-      {% for r in urgent %}
-        <tr>
-          <td>{{ "%.2f"|format(r.urgency) }}</td>
-          <td>{{ r.rating if r.rating is not none else "?" }}</td>
-          <td>{{ r.emotion or "?" }}</td>
-          <td>{{ r.body }}</td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
-    <p><em>No urgency scores available.</em></p>
-    {% endif %}
-
-    <!-- Emotions -->
-    <h2>Emotion Distribution</h2>
-    {% if emotions.entries %}
-    <table class="sortable-table">
-      <thead>
-        <tr><th>Emotion</th><th>Count</th><th>Share</th></tr>
-      </thead>
-      <tbody>
-      {% for e in emotions.entries %}
-        <tr>
-          <td>{{ e.emotion }}</td>
-          <td>{{ e.count }}</td>
-          <td>{{ "%.0f"|format(e.share * 100) }}%</td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
-    <p><em>No emotion data available.</em></p>
-    {% endif %}
-
-    <!-- Entities -->
-    {% if entities %}
-    <h2>Mentioned Entities (companies & products)</h2>
-    <table class="sortable-table">
-      <thead>
-        <tr><th>Entity</th><th>Mentions</th></tr>
-      </thead>
-      <tbody>
-      {% for e in entities %}
-        <tr><td>{{ e.text }}</td><td>{{ e.count }}</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
-    {% endif %}
-
-    <!-- Aspect Index -->
-    {% if aspect_index %}
-    <h2>Aspect Index</h2>
-    <p>Top aspects from 1–2★ reviews and the priority issue they most belong to.</p>
-    <input type="text" class="filter-input" placeholder="Filter aspects…" id="aspect-filter">
-    <table class="sortable-table" id="aspect-index-table">
-      <thead>
-        <tr><th>Aspect</th><th>Mentions in 1-2★</th><th>Primary issue</th></tr>
-      </thead>
-      <tbody>
-      {% for a in aspect_index %}
-        <tr>
-          <td>{{ a.aspect }}</td>
-          <td>{{ a.neg_count }}</td>
-          <td>
-            {% if a.primary_issue_rank %}
-              <a href="#issue-{{ a.primary_issue_rank }}">Issue {{ a.primary_issue_rank }}</a>
-            {% elif a.primary_cluster_id is not none %}
-              cluster {{ a.primary_cluster_id }} (not in top issues)
-            {% else %}—{% endif %}
-          </td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-    {% endif %}
   </section>
 
-  <footer>
+  <!-- By the numbers — Phase IX one-line stats footer. Replaces the
+       multi-bullet Feature Summary that used to close the report and the
+       6-card Overall Sentiment grid that used to lead Detailed Analysis. -->
+  <footer class="by-the-numbers">
     <p>
+      <strong>By the numbers:</strong>
       {{ "{:,}".format(feature_summary.n_reviews) }} reviews ·
-      {{ "{:,}".format(feature_summary.unique_aspects) }} unique aspects ·
-      {{ feature_summary.themes }} themes ·
-      {{ feature_summary.n_issues }} issues
+      {{ "%.2f"|format(overall.avg_rating) }}★ avg ·
+      {{ "%+.2f"|format(overall.avg_polarity) }} polarity ·
+      {{ "%.0f"|format(overall.neg_pct * 100) }}% negative
+      ({{ "%.0f"|format(overall.obj_neg_pct * 100) }}% bug-shaped,
+       {{ "%.0f"|format(overall.subj_neg_pct * 100) }}% emotional) ·
+      {{ "{:,}".format(feature_summary.unique_aspects) }} aspects ·
+      {{ feature_summary.themes }} topics ·
+      {{ feature_summary.n_issues }} priority issues
     </p>
   </footer>
 </main>

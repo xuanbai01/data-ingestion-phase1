@@ -24,15 +24,28 @@ Design points:
   on the same cache miss. Keeps the code simple.
 """
 import hashlib
+import json
 import logging
 import os
+import re
 
-from database.db import load_issue_label, save_issue_label
+from database.db import (
+    load_issue_label,
+    save_issue_label,
+    load_takeaways,
+    save_takeaways,
+    load_section_narrative,
+    save_section_narrative,
+)
 
 LLM_MODEL = "claude-haiku-4-5"
 LLM_MAX_TOKENS = 50            # 4–6 word labels never need more than ~30 tokens
 LLM_TEMPERATURE = 0.2          # low — we want deterministic-ish titles, not creativity
 SAMPLE_REVIEW_MAX_CHARS = 200  # truncate long reviews so the prompt stays cheap
+
+# Takeaways are 3-5 bullet points, each 1-2 sentences ≈ 30 tokens. Cap at
+# 500 to give headroom without runaway output.
+TAKEAWAYS_MAX_TOKENS = 500
 
 LOG = logging.getLogger("pipeline")
 
@@ -155,3 +168,295 @@ def generate_cluster_label(aspects, sample_reviews, review_hashes, use_cache=Tru
     if use_cache:
         save_issue_label(cache_key, label, LLM_MODEL)
     return label
+
+
+# ---------------------------------------------------------------------------
+# Key takeaways (Phase VIII — the "so what?" layer)
+# ---------------------------------------------------------------------------
+
+_TAKEAWAYS_PROMPT = """You write the executive takeaways for an app-store review analysis report. \
+A non-technical reader (PM / engineer / leadership) reads this section to decide what to do.
+
+Produce 3-5 bullet points. Each bullet must:
+- Name a specific issue, feature, or pattern (cite Issue numbers, aspect names, app versions, or product names)
+- Cite the supporting data inline (counts, percentages, ratings, deltas) — only numbers from the data below
+- Imply an action: "fix first", "watch closely", "preserve", "investigate", etc.
+
+Lead each bullet with a bold phrase using **markdown bold** — usually the recommended action or the entity being discussed. Keep each bullet 1-2 sentences. Be concrete; no vague claims. Do not invent numbers — only use what's in the data.
+
+Output: a markdown bullet list (lines starting with "- "). No preamble, no closing remarks, no headings.
+
+DATA:
+{data_json}"""
+
+
+def compute_takeaways_cache_key(synthesis_input):
+    """Stable cache key for a takeaways generation, content-addressed by the
+    synthesis input dict. Uses canonical JSON (sorted keys) so equivalent
+    inputs produce the same key regardless of dict iteration order.
+    """
+    canonical = json.dumps(synthesis_input, sort_keys=True, default=str)
+    return hashlib.md5(canonical.encode("utf-8")).hexdigest()
+
+
+def _build_synthesis_input(data):
+    """Project the full report data dict down to just the fields the LLM needs
+    for synthesis. Keeps the prompt under ~2000 tokens and avoids passing
+    embeddings, raw review text, etc.
+    """
+    issues = data.get("issues") or []
+    rd = data.get("run_delta") or {}
+    absa = data.get("absa") or {}
+    positives = (data.get("positives") or {}).get("entries") or []
+    entities = data.get("entities") or []
+    feature_summary = data.get("feature_summary") or {}
+    overall = data.get("overall") or {}
+
+    return {
+        "corpus": {
+            "n_reviews":   feature_summary.get("n_reviews"),
+            "avg_rating":  round(overall.get("avg_rating", 0.0), 2),
+            "neg_pct":     round(overall.get("neg_pct", 0.0), 2),
+            "n_issues":    feature_summary.get("n_issues"),
+        },
+        "top_issues": [
+            {
+                "rank":        i["rank"],
+                "label":       i["label"],
+                "count":       i["count"],
+                "avg_rating":  round(i["avg_rating"], 1),
+                "score":       i["score"],
+                "obj_share":   round(i["bug_complaint"]["obj_share"], 2),
+                "top_emotions": [e["label"] for e in i.get("emotions", [])[:3]],
+                "top_entities": [e["text"] for e in i.get("entities", [])[:3]],
+                "top_versions": [v["version"] for v in i.get("app_versions", [])[:3]],
+            }
+            for i in issues
+        ],
+        "run_delta": {
+            "first_run":  bool(rd.get("first_run")),
+            "omitted":    bool(rd.get("omitted")),
+            "escalating": [
+                {"label": e["label"], "current": e["current_count"],
+                 "prior": e["prior_count"], "pct_change": round(e["pct_change"], 0)}
+                for e in (rd.get("escalating") or [])
+            ],
+            "improving":  [
+                {"label": e["label"], "current": e["current_count"],
+                 "prior": e["prior_count"], "pct_change": round(e["pct_change"], 0)}
+                for e in (rd.get("improving") or [])
+            ],
+            "new":        [
+                {"label": e["label"], "current": e["current_count"]}
+                for e in (rd.get("new") or [])
+            ],
+            "resolved":   [
+                {"label": e["label"], "prior": e["prior_count"]}
+                for e in (rd.get("resolved") or [])
+            ],
+        },
+        "absa_loved": [
+            {"aspect": a["aspect"], "polarity": round(a["avg_polarity"], 2),
+             "count": a["count"]}
+            for a in (absa.get("loved") or [])[:5]
+        ],
+        "absa_hated": [
+            {"aspect": a["aspect"], "polarity": round(a["avg_polarity"], 2),
+             "count": a["count"]}
+            for a in (absa.get("hated") or [])[:5]
+        ],
+        "positives": [
+            {"label": p["label"], "count": p["count"],
+             "avg_rating": round(p["avg_rating"], 1)}
+            for p in positives[:5]
+        ],
+        "top_entities": [
+            {"text": e["text"], "count": e["count"]}
+            for e in entities[:5]
+        ],
+    }
+
+
+def _parse_bullets(raw_text):
+    """Extract bullet text from a markdown list. Tolerant of the LLM adding a
+    short preamble or wrapping the list in extra whitespace. Returns the
+    bullet text *with* the leading `- ` stripped.
+    """
+    if not raw_text:
+        return []
+    bullets = []
+    for line in raw_text.strip().split("\n"):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        # Detect bullet lines: "- foo" or "* foo" or "1. foo" (defensive)
+        m = re.match(r"^(?:[-*]|\d+\.)\s+(.+)$", stripped)
+        if m:
+            bullets.append(m.group(1).strip())
+        elif bullets:
+            # Continuation line — append to the last bullet so 2-line bullets
+            # don't get fragmented.
+            bullets[-1] += " " + stripped
+    return bullets
+
+
+def generate_key_takeaways(report_data, use_cache=True):
+    """
+    Synthesize 3-5 executive takeaway bullets from the full report data.
+
+    Returns list[str] of bullets (each a 1-2 sentence string with possible
+    **markdown bold** for emphasis), or None on any failure (missing API
+    key, network error, empty response, no data to synthesize).
+
+    The caller is expected to render the bullets directly — this function
+    keeps `**bold**` markers in the output so the markdown renderer can
+    pass them through unchanged and the HTML renderer can convert via a
+    Jinja filter.
+    """
+    if not (report_data and (report_data.get("issues") or report_data.get("run_delta"))):
+        return None
+
+    synthesis_input = _build_synthesis_input(report_data)
+    cache_key = compute_takeaways_cache_key(synthesis_input)
+
+    if use_cache:
+        cached = load_takeaways(cache_key)
+        if cached:
+            return _parse_bullets(cached)
+
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        LOG.warning(
+            "ANTHROPIC_API_KEY not set; skipping LLM takeaways synthesis. "
+            "Set the key for richer reports — falls back to omitting the section."
+        )
+        return None
+
+    prompt = _TAKEAWAYS_PROMPT.format(
+        data_json=json.dumps(synthesis_input, indent=2, default=str)
+    )
+
+    try:
+        import anthropic
+        client = anthropic.Anthropic()
+        response = client.messages.create(
+            model=LLM_MODEL,
+            max_tokens=TAKEAWAYS_MAX_TOKENS,
+            temperature=LLM_TEMPERATURE,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        if not response.content:
+            raise ValueError("empty content list in LLM response")
+        raw = response.content[0].text
+    except Exception as e:
+        LOG.warning(f"LLM takeaways synthesis failed: {e}; section will be omitted")
+        return None
+
+    bullets = _parse_bullets(raw)
+    if not bullets:
+        LOG.warning("LLM returned no parseable bullets; section will be omitted")
+        return None
+
+    if use_cache:
+        # Store the raw markdown so we can re-parse later if the parsing
+        # logic changes; renderers re-parse on read anyway.
+        save_takeaways(cache_key, raw, LLM_MODEL)
+
+    return bullets
+
+
+# ---------------------------------------------------------------------------
+# Per-section narratives (Phase IX — one-sentence intros for kept detail sections)
+# ---------------------------------------------------------------------------
+
+# Tighter cap than takeaways — these are 1-2 sentence leads, not bullet lists.
+NARRATIVE_MAX_TOKENS = 120
+
+_NARRATIVE_PROMPT = """You write the lead sentence for one section of an app-review analysis report. \
+A non-technical reader will scan this sentence to decide whether to read the section's data below.
+
+Produce 1-2 sentences that:
+- Name what the section shows (in plain English)
+- Highlight the single most notable specific entry (with its name and the supporting number)
+- Imply what the reader can do with the information ("preserve", "watch", "investigate", etc.) when relevant
+
+If a specific action or named entity stands out, lead with it in **markdown bold**. Keep it short — this is a lead, not a paragraph. Use only numbers from the data; do not invent. No preamble, no closing remarks, no headings, no bullet markers. Output only the sentence.
+
+SECTION: {section_name}
+DATA:
+{data_json}"""
+
+
+def _compute_narrative_cache_key(section_name, data):
+    """Cache key combines section name + canonical JSON of the section data.
+    Different sections never collide; same data in the same section reuses."""
+    canonical = json.dumps(data, sort_keys=True, default=str)
+    raw = f"{section_name}|{canonical}"
+    return hashlib.md5(raw.encode("utf-8")).hexdigest()
+
+
+def _clean_narrative(text):
+    """Strip whitespace, leading bullet markers, surrounding quotes."""
+    if not text:
+        return None
+    cleaned = text.strip()
+    # Drop a leading "- " or "* " in case the model added a bullet
+    cleaned = re.sub(r"^[-*]\s+", "", cleaned)
+    # Strip surrounding quotes
+    cleaned = cleaned.strip('"').strip("'").strip()
+    if not cleaned:
+        return None
+    # Cap at a sane maximum (defensive against runaway output)
+    return cleaned[:600]
+
+
+def generate_section_narrative(section_name, section_data, use_cache=True):
+    """
+    Synthesize a 1-2 sentence narrative lead for a detailed report section.
+
+    Returns the narrative string (may contain `**markdown bold**`) or None
+    on missing API key, API failure, empty response, or empty input data.
+    Caller is expected to render the section without a lead on None.
+    """
+    if not section_data:
+        return None
+
+    cache_key = _compute_narrative_cache_key(section_name, section_data)
+
+    if use_cache:
+        cached = load_section_narrative(cache_key)
+        if cached:
+            return cached
+
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        # Already logged once per run by the takeaways path; staying quiet
+        # here avoids log spam from multiple narrative calls.
+        return None
+
+    prompt = _NARRATIVE_PROMPT.format(
+        section_name=section_name,
+        data_json=json.dumps(section_data, indent=2, default=str),
+    )
+
+    try:
+        import anthropic
+        client = anthropic.Anthropic()
+        response = client.messages.create(
+            model=LLM_MODEL,
+            max_tokens=NARRATIVE_MAX_TOKENS,
+            temperature=LLM_TEMPERATURE,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        if not response.content:
+            raise ValueError("empty content list in LLM response")
+        raw = response.content[0].text
+    except Exception as e:
+        LOG.warning(f"LLM section narrative failed for {section_name}: {e}; section will render without lead")
+        return None
+
+    narrative = _clean_narrative(raw)
+    if not narrative:
+        return None
+
+    if use_cache:
+        save_section_narrative(cache_key, narrative, LLM_MODEL)
+    return narrative

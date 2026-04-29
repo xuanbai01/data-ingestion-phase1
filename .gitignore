@@ -5,6 +5,7 @@ logs/
 exports/
 .env
 .claude
+past_report
 
 # virtual environments
 .venv/

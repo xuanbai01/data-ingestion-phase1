@@ -65,7 +65,7 @@ def _synthetic_corpus(n_negative=40, n_positive=20):
 EXPECTED_TOP_KEYS = {
     "header", "overall", "issues", "run_delta", "positives", "absa",
     "urgent", "emotions", "entities", "aspect_index", "feature_summary",
-    "run_summary", "_meta",
+    "run_summary", "takeaways", "_meta",
 }
 
 
@@ -435,7 +435,14 @@ def test_markdown_includes_pitch_and_run_summary():
 
 def test_markdown_has_detailed_analysis_separator():
     """The supporting sections live below a horizontal rule + 'Detailed
-    analysis' heading, so plain-text readers can see the structural hint."""
+    analysis' heading, so plain-text readers can see the structural hint.
+
+    Phase IX cut Overall Sentiment / Most Urgent / Emotion Distribution /
+    Mentioned Entities / Aspect Index from the rendered output. The kept
+    detail sections under the divider are now Top Positives (rendered as
+    "What are users happy about?") and ABSA ("Which features are loved
+    vs hated?") — we check the divider precedes one of those.
+    """
     from pipeline.summarizer import render_markdown
 
     reviews = _synthetic_corpus()
@@ -444,6 +451,10 @@ def test_markdown_has_detailed_analysis_separator():
     assert "## Detailed analysis" in md
     # The separator line precedes the detailed section
     sep_pos = md.find("---\n\n## Detailed analysis")
-    overall_pos = md.find("## Overall Sentiment")
     assert sep_pos > 0
-    assert sep_pos < overall_pos  # separator appears before overall sentiment
+    # At least one kept section appears after the divider
+    happy_pos = md.find("## What are users happy about?")
+    loved_pos = md.find("## Which features are loved vs hated?")
+    assert max(happy_pos, loved_pos) > sep_pos, (
+        "expected at least one Phase IX kept section under the divider"
+    )

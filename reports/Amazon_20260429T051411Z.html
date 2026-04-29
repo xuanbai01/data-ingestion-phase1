@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Amazon — Review Analysis · 20260428T172910Z</title>
+  <title>Amazon — Review Analysis · 20260429T051411Z</title>
   <style>@charset "UTF-8";/*!
  * Pico CSS ✨ v2.0.6 (https://picocss.com)
  * Copyright 2019-2024 - Licensed under MIT
@@ -26,10 +26,36 @@
     nav.top a { font-size: 0.9rem; text-decoration: none; }
     nav.top a:hover { text-decoration: underline; }
     nav.top .app-name { font-weight: 600; margin-right: 1rem; }
+    /* Push the toggle LI to the far right of the nav. margin-left:auto has
+       to live on the flex item (the LI), not the button inside it. */
+    nav.top li.nav-end { margin-left: auto; }
+
+    /* Explicit color override. Pico does something subtle: inside button
+       scope it redefines --pico-color itself to --pico-primary-inverse
+       (white in light theme). So `color: var(--pico-color)` resolves to
+       white inside a button regardless of theme — invisible on our
+       transparent background.
+       Fix: use `inherit` so the button takes color from the surrounding
+       nav/body chain, where --pico-color still has its proper value. */
     nav.top .theme-toggle {
-      margin-left: auto; cursor: pointer;
-      background: none; border: 1px solid var(--pico-muted-border-color);
-      padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.85rem;
+      cursor: pointer;
+      background: transparent;
+      color: inherit;
+      border: 1px solid var(--pico-muted-border-color);
+      padding: 0.2rem 0.7rem;
+      border-radius: 4px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      line-height: 1.4;
+    }
+    nav.top .theme-toggle:hover {
+      background: var(--pico-secondary-background, rgba(0,0,0,0.05));
+      border-color: currentColor;
+      color: inherit;
+    }
+    nav.top .theme-toggle:focus-visible {
+      outline: 2px solid var(--pico-primary, #3b82f6);
+      outline-offset: 2px;
     }
 
     /* Stat cards */
@@ -117,6 +143,40 @@
       }
     }
 
+    /* Run Delta — compact "stable" state (Phase X). When nothing changed,
+       the section collapses to a single line so it doesn't claim the same
+       visual real estate as the buckets-and-lists rich state. */
+    section#delta.stable {
+      padding: 0.6rem 1rem;
+      border-left: 3px solid #5cb85c;
+      background: rgba(92, 184, 92, 0.05);
+      border-radius: var(--pico-border-radius);
+      margin: 1rem 0 1.5rem;
+    }
+    .stable-line { margin: 0; line-height: 1.6; }
+    .stable-line .badge {
+      display: inline-block;
+      padding: 0.1rem 0.55rem;
+      font-size: 0.8rem;
+      font-weight: 500;
+      border-radius: 999px;
+      margin: 0 0.3rem;
+    }
+    .stable-line .badge.stable {
+      background: #5cb85c; color: white;
+    }
+    .stable-line .muted {
+      color: var(--pico-muted-color);
+    }
+    [data-theme="dark"] section#delta.stable {
+      background: rgba(92, 184, 92, 0.1);
+    }
+    @media (prefers-color-scheme: dark) {
+      html:not([data-theme="light"]) section#delta.stable {
+        background: rgba(92, 184, 92, 0.1);
+      }
+    }
+
     /* Run delta */
     .delta-bucket {
       padding: 1rem 1.2rem; border-radius: var(--pico-border-radius);
@@ -143,6 +203,14 @@
     .sortable-table th.sort-asc::after { content: " ↑"; opacity: 1; }
     .sortable-table th.sort-desc::after { content: " ↓"; opacity: 1; }
 
+    /* Trend indicators in the priority leaderboard (Phase X) */
+    .trend { font-size: 0.85rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .trend-up      { color: #d9534f; font-weight: 600; }
+    .trend-down    { color: #5cb85c; font-weight: 600; }
+    .trend-new     { color: #5bc0de; font-weight: 600; }
+    .trend-stable  { color: var(--pico-muted-color); }
+    .trend-none    { color: var(--pico-muted-color); }
+
     /* ABSA bars */
     .absa-bar-row {
       display: grid; grid-template-columns: 8rem 1fr 4rem;
@@ -162,11 +230,41 @@
       max-width: 320px; margin-bottom: 0.8rem;
     }
 
-    /* Footer */
+    /* Footer (Phase IX: condensed one-line stats) */
     footer {
-      margin-top: 3rem; padding-top: 1rem;
+      margin-top: 2rem; padding-top: 1rem;
       border-top: 1px solid var(--pico-muted-border-color);
-      color: var(--pico-muted-color); font-size: 0.85rem;
+      color: var(--pico-muted-color); font-size: 0.9rem;
+    }
+    footer.by-the-numbers p {
+      margin: 0; line-height: 1.5;
+    }
+    footer.by-the-numbers strong {
+      color: var(--pico-color);
+      text-transform: uppercase;
+      font-size: 0.8em;
+      letter-spacing: 0.06em;
+      margin-right: 0.4rem;
+    }
+
+    /* Section narrative — one-sentence LLM lead under a question heading
+       in the Detailed Analysis area (Phase IX). */
+    .section-narrative {
+      color: var(--pico-color);
+      line-height: 1.5;
+      margin: 0.4rem 0 1rem;
+      max-width: 70ch;
+    }
+    .section-narrative strong {
+      color: #1e3a8a;
+    }
+    [data-theme="dark"] .section-narrative strong {
+      color: #93c5fd;
+    }
+    @media (prefers-color-scheme: dark) {
+      html:not([data-theme="light"]) .section-narrative strong {
+        color: #93c5fd;
+      }
     }
 
     /* Compact code spans for run IDs */
@@ -222,6 +320,46 @@
       background: var(--pico-muted-border-color);
     }
 
+    /* Key Takeaways section (Phase VIII) — the "so what?" layer that
+       connects the data to action. Visually weighty: this is the report's
+       thesis, evidence below. */
+    section#takeaways {
+      background: var(--pico-card-background-color, #f8fafc);
+      border-left: 4px solid #3b82f6;
+      border-radius: var(--pico-border-radius);
+      padding: 1.2rem 1.5rem;
+      margin: 1.5rem 0 2rem;
+    }
+    section#takeaways h2 {
+      margin-top: 0; margin-bottom: 0.6rem;
+      font-size: 1.2rem;
+      color: var(--pico-color);
+    }
+    section#takeaways .takeaways-list {
+      margin: 0; padding-left: 1.4rem;
+    }
+    section#takeaways .takeaways-list li {
+      margin: 0.55rem 0; line-height: 1.5;
+      color: var(--pico-color);
+    }
+    section#takeaways .takeaways-list li strong {
+      color: #1e3a8a;  /* match the pill color so the "what to do" reads */
+    }
+    [data-theme="dark"] section#takeaways {
+      background: rgba(59, 130, 246, 0.08);
+    }
+    [data-theme="dark"] section#takeaways .takeaways-list li strong {
+      color: #93c5fd;
+    }
+    @media (prefers-color-scheme: dark) {
+      html:not([data-theme="light"]) section#takeaways {
+        background: rgba(59, 130, 246, 0.08);
+      }
+      html:not([data-theme="light"]) section#takeaways .takeaways-list li strong {
+        color: #93c5fd;
+      }
+    }
+
     /* Editorial-pass card layout — quieter, more story-shaped (Phase VII v2) */
     .card-stats {
       font-size: 0.95rem; color: var(--pico-muted-color);
@@ -243,6 +381,14 @@
     .sparkline-caption {
       font-size: 0.85rem; color: var(--pico-muted-color);
       margin: 0.2rem 0 1.2rem; font-style: italic;
+    }
+    /* Endpoint axis labels: start date flush left, end date flush right
+       under the sparkline. Lighter visual weight than a full 12-label axis. */
+    .sparkline-axis {
+      display: flex; justify-content: space-between;
+      font-size: 0.75rem; color: var(--pico-muted-color);
+      margin: -0.2rem 0 1.2rem; padding: 0 0.1rem;
+      font-variant-numeric: tabular-nums;
     }
     .quotes {
       margin: 1.2rem 0;
@@ -285,10 +431,11 @@
 <nav class="top">
   <ul>
     <li class="app-name">Amazon</li>
+    <li><a href="#takeaways">Takeaways</a></li>
     <li><a href="#delta">Run Delta</a></li>
     <li><a href="#priority">Priority Issues</a></li>
     <li><a href="#detailed">Detailed analysis</a></li>
-    <li><button class="theme-toggle" onclick="toggleTheme()">Theme</button></li>
+    <li class="nav-end"><button class="theme-toggle" onclick="toggleTheme()">Theme</button></li>
   </ul>
 </nav>
 
@@ -296,7 +443,7 @@
   <header>
     <h1>Review Analysis Report — Amazon</h1>
     <p class="pitch">Groups app reviews into recurring issues and tracks them over time — surfacing what&#39;s getting worse, improving, new, or resolved.</p>
-    <p class="meta">10,000 reviews · generated 2026-04-28 · run <code>20260428T172910Z</code></p>
+    <p class="meta">10,000 reviews · generated 2026-04-29 · run <code>20260429T051411Z</code></p>
   </header>
 
   <!-- Run summary: narrative + 4-stat ribbon -->
@@ -322,14 +469,43 @@
     </div>
   </section>
 
-  <!-- Run Delta — moved to lead position (Phase VII) since it's the most
-       valuable answer the report gives. Renders even on first runs (with
-       a baseline placeholder) so the section's existence isn't a surprise. -->
+  <!-- Key takeaways — the "so what?" layer (Phase VIII). LLM-synthesized
+       3-5 actionable bullets, leading the report so readers see the thesis
+       before the evidence. Section omits entirely on missing API key /
+       LLM error, so the rest of the report is unaffected. -->
   
-  <section id="delta">
-    <h2>Run Delta</h2>
+  <section id="takeaways">
+    <h2>Key takeaways</h2>
+    <ul class="takeaways-list">
+      
+      <li><strong>Fix App Crashes and Freezing Issues first</strong>: This is the highest-volume complaint with 1,350 reviews (13.5% of corpus) and the lowest average rating of 1.6, affecting Samsung and Google devices—resolve before addressing lower-priority issues.</li>
+      
+      <li><strong>Investigate Payment Method Issues and Rejections urgently</strong>: 1,004 reviews (10% of corpus) cite payment failures with an average rating of 1.4, the lowest across all issues, with strong anger and sadness signals; Google Pay and OTP rejections are primary friction points.</li>
+      
+      <li><strong>Address Tablet Support Removal strategically</strong>: 503 reviews (5% of corpus) report dropped tablet support with a 1.3 average rating and high surprise emotion; Samsung and Lenovo tablet users are actively churning—consider restoring or communicating a roadmap.</li>
+      
+      <li><strong>Preserve shopping and pricing strengths</strong>: 1,867 positive reviews (18.7% of corpus) praise shopping, price, and service with a 4.6 average rating; maintain these differentiators while fixing stability and payment issues.</li>
+      
+      <li><strong>Monitor account and update sentiment closely</strong>: 414 reviews cite account issues (polarity -0.73) and 337 cite update problems (polarity -0.85), suggesting recent changes may have introduced friction—track whether these stabilize or escalate in next review cycle.</li>
+      
+    </ul>
+  </section>
+  
+
+  <!-- Run Delta — promoted to lead-of-evidence position (Phase VII) since
+       it's the most valuable answer the report gives. Renders even on
+       first runs (with a baseline placeholder) so the section's existence
+       isn't a surprise. -->
+  
     
-    <p>Compared to prior run <code>20260428T171744Z</code>. <em>No significant changes since prior run.</em></p>
+  <section id="delta" class="stable">
+    
+    
+    <p class="stable-line">
+      <strong>Run Delta —</strong>
+      <span class="badge stable">stable</span>
+      <span class="muted">no significant changes vs prior run <code>20260429T051018Z</code></span>
+    </p>
     
   </section>
   
@@ -345,7 +521,8 @@
     <table class="sortable-table">
       <thead>
         <tr>
-          <th>#</th><th>Issue</th><th>Reviews</th><th>Avg rating</th><th>Priority</th>
+          <th>#</th><th>Issue</th><th>Reviews</th><th>Avg rating</th>
+          <th>Trend</th><th>Priority</th>
         </tr>
       </thead>
       <tbody>
@@ -355,6 +532,12 @@
           <td><a href="#issue-1">Payment Method Issues and Rejections</a></td>
           <td>1004</td>
           <td>1.4</td>
+          <td>
+            
+            
+              <span class="trend trend-stable" title="no significant change">— stable</span>
+            
+          </td>
           <td>0.74</td>
         </tr>
         
@@ -363,6 +546,12 @@
           <td><a href="#issue-2">App Crashes and Freezing Issues</a></td>
           <td>1350</td>
           <td>1.6</td>
+          <td>
+            
+            
+              <span class="trend trend-stable" title="no significant change">— stable</span>
+            
+          </td>
           <td>0.74</td>
         </tr>
         
@@ -371,6 +560,12 @@
           <td><a href="#issue-3">Unreliable Delivery and Poor Customer Service</a></td>
           <td>1086</td>
           <td>1.5</td>
+          <td>
+            
+            
+              <span class="trend trend-stable" title="no significant change">— stable</span>
+            
+          </td>
           <td>0.74</td>
         </tr>
         
@@ -379,6 +574,12 @@
           <td><a href="#issue-4">App Dropped Support for Tablets</a></td>
           <td>503</td>
           <td>1.3</td>
+          <td>
+            
+            
+              <span class="trend trend-stable" title="no significant change">— stable</span>
+            
+          </td>
           <td>0.69</td>
         </tr>
         
@@ -387,6 +588,12 @@
           <td><a href="#issue-5">Unreliable Delivery and Late Shipments</a></td>
           <td>973</td>
           <td>1.8</td>
+          <td>
+            
+            
+              <span class="trend trend-stable" title="no significant change">— stable</span>
+            
+          </td>
           <td>0.68</td>
         </tr>
         
@@ -413,18 +620,21 @@
 
       
       <div class="sparkline-wrap"><canvas data-sparkline="0"></canvas></div>
-      <p class="sparkline-caption">Mention trend, 2026-01-02 → 2026-04-20</p>
+      <div class="sparkline-axis">
+        <span>2026-01-02</span>
+        <span>2026-04-20</span>
+      </div>
       
 
       
       <div class="quotes">
         <div class="quotes-intro">In their words</div>
         
-        <blockquote>I come back to try to be a customer again and it will not let me go through my whole payment thing and it keeps rejecting my debit credit card and I just use it at other places I&#39;ve been having proble</blockquote>
+        <blockquote>I come back to try to be a customer again and it will not let me go through my whole payment thing and it keeps rejecting my debit credit card and I just use it at other places I&#39;ve been having…</blockquote>
         
-        <blockquote>Amazon has become un-human when it comes to customer service. I can&#39;t uncheck using my digital Amazon gift card as payment of prime membership. I was saving that for something else. Amazon is about to</blockquote>
+        <blockquote>Amazon has become un-human when it comes to customer service. I can&#39;t uncheck using my digital Amazon gift card as payment of prime membership. I was saving that for something else. Amazon is about…</blockquote>
         
-        <blockquote>wish I could make this 0 stars. tried updating my payment method over and over and over but it kept trying to charge a card I did not have connected to my Amazon account. I have no clue how they got t</blockquote>
+        <blockquote>wish I could make this 0 stars. tried updating my payment method over and over and over but it kept trying to charge a card I did not have connected to my Amazon account. I have no clue how they got…</blockquote>
         
       </div>
       
@@ -467,9 +677,9 @@
           
             <span class="pill">OTP ×9</span>
           
-            <span class="pill">Rufus ×3</span>
-          
             <span class="pill">eBay ×3</span>
+          
+            <span class="pill">PayPal ×3</span>
           
         </div>
         
@@ -495,7 +705,10 @@
 
       
       <div class="sparkline-wrap"><canvas data-sparkline="1"></canvas></div>
-      <p class="sparkline-caption">Mention trend, 2026-01-02 → 2026-04-20</p>
+      <div class="sparkline-axis">
+        <span>2026-01-02</span>
+        <span>2026-04-20</span>
+      </div>
       
 
       
@@ -506,7 +719,7 @@
         
         <blockquote>App is completely unusable now, can&#39;t even log in without it freezing and crashing. Forget customer support, they don&#39;t even read the reviews.</blockquote>
         
-        <blockquote>The app has several problems lately. The most frustrating one is not being able to access open customer service chats or responses and being able to go back to them before they are closed when you hav</blockquote>
+        <blockquote>The app has several problems lately. The most frustrating one is not being able to access open customer service chats or responses and being able to go back to them before they are closed when you…</blockquote>
         
       </div>
       
@@ -543,15 +756,15 @@
         <div class="metric-row">
           <span class="metric-label">Mentions</span>
           
-            <span class="pill">Android ×13</span>
-          
-            <span class="pill">Rufus ×11</span>
-          
             <span class="pill">Samsung ×7</span>
           
             <span class="pill">Google ×6</span>
           
-            <span class="pill">Newest ×3</span>
+            <span class="pill">Benachrichtigungen ×3</span>
+          
+            <span class="pill">Google Pixel ×3</span>
+          
+            <span class="pill">LOT ×3</span>
           
         </div>
         
@@ -577,16 +790,19 @@
 
       
       <div class="sparkline-wrap"><canvas data-sparkline="2"></canvas></div>
-      <p class="sparkline-caption">Mention trend, 2026-01-02 → 2026-04-20</p>
+      <div class="sparkline-axis">
+        <span>2026-01-02</span>
+        <span>2026-04-20</span>
+      </div>
       
 
       
       <div class="quotes">
         <div class="quotes-intro">In their words</div>
         
-        <blockquote>delivery instructions never followed. consistency of delivery times estimates not being correct. customer service is an AI bot that&#39;s useless. 1 star sellers still operating with over 1k complaints. l</blockquote>
+        <blockquote>delivery instructions never followed. consistency of delivery times estimates not being correct. customer service is an AI bot that&#39;s useless. 1 star sellers still operating with over 1k complaints.…</blockquote>
         
-        <blockquote>You guys really suck at hiring people and screening who sell with you guys. Multiple occasions I&#39;ve ordered something and didn&#39;t get it or the things I ordered were delivered to the wrong address. If </blockquote>
+        <blockquote>You guys really suck at hiring people and screening who sell with you guys. Multiple occasions I&#39;ve ordered something and didn&#39;t get it or the things I ordered were delivered to the wrong address.…</blockquote>
         
         <blockquote>worst customer service ever. hard to contact, wont ever order something again</blockquote>
         
@@ -625,15 +841,13 @@
         <div class="metric-row">
           <span class="metric-label">Mentions</span>
           
-            <span class="pill">Rufus ×10</span>
-          
             <span class="pill">Google ×6</span>
           
             <span class="pill">eBay ×5</span>
           
-            <span class="pill">Customer ×4</span>
+            <span class="pill">Walmart ×3</span>
           
-            <span class="pill">Customer Service ×3</span>
+            <span class="pill">SCAM ×3</span>
           
         </div>
         
@@ -664,7 +878,10 @@
 
       
       <div class="sparkline-wrap"><canvas data-sparkline="3"></canvas></div>
-      <p class="sparkline-caption">Mention trend, 2026-01-02 → 2026-04-20</p>
+      <div class="sparkline-axis">
+        <span>2026-01-02</span>
+        <span>2026-04-20</span>
+      </div>
       
 
       
@@ -714,13 +931,13 @@
           
             <span class="pill">Samsung ×43</span>
           
-            <span class="pill">Android ×38</span>
-          
             <span class="pill">google ×9</span>
           
-            <span class="pill">Tablet ×8</span>
-          
             <span class="pill">Lenovo ×6</span>
+          
+            <span class="pill">Samsung Tablet ×5</span>
+          
+            <span class="pill">eBay ×5</span>
           
         </div>
         
@@ -746,16 +963,19 @@
 
       
       <div class="sparkline-wrap"><canvas data-sparkline="4"></canvas></div>
-      <p class="sparkline-caption">Mention trend, 2026-01-02 → 2026-04-20</p>
+      <div class="sparkline-axis">
+        <span>2026-01-02</span>
+        <span>2026-04-20</span>
+      </div>
       
 
       
       <div class="quotes">
         <div class="quotes-intro">In their words</div>
         
-        <blockquote>Packages are always late. they promise next day or same day and can&#39;t deliver. It never used to be this way but in the last month i have had 4 shipments be late or lost. Will look for somewhere else t</blockquote>
+        <blockquote>Packages are always late. they promise next day or same day and can&#39;t deliver. It never used to be this way but in the last month i have had 4 shipments be late or lost. Will look for somewhere else…</blockquote>
         
-        <blockquote>this is the second time I have tried your Amazon prime and you always get my deliveries late you give me days when they will arrive and it&#39;s always late I have never received a package on time. I will</blockquote>
+        <blockquote>this is the second time I have tried your Amazon prime and you always get my deliveries late you give me days when they will arrive and it&#39;s always late I have never received a package on time. I…</blockquote>
         
         <blockquote>Amazon Corp are crooks and delivery is never on time .</blockquote>
         
@@ -815,54 +1035,26 @@
     
   </section>
 
-  <!-- Detailed analysis — supporting views, visually demoted (Phase VII). -->
+  <!-- Detailed analysis (Phase IX). The global Most Urgent Reviews,
+       Emotion Distribution, Mentioned Entities, and Aspect Index tables
+       were dropped — their per-issue equivalents inside the cards above
+       carry the useful signal, the global aggregates were noise. The
+       Overall Sentiment 6-card grid is condensed into the "By the numbers"
+       footer at the end. What remains is counter-signal not visible
+       elsewhere: positives clusters, and ABSA's loved/hated view. Each
+       gets a one-sentence LLM lead in place of a data-only table dump. -->
   <hr class="detailed-divider">
   <section id="detailed">
     <h2>Detailed analysis</h2>
-    <p>Supporting views — sentiment distribution, ABSA aspect-level polarity, urgent reviews, emotion / entity / aspect breakdowns. Useful for drill-down; not required reading.</p>
 
-    <!-- Overall Sentiment (moved here from the top in Phase VII) -->
-    <h2>Overall Sentiment</h2>
-    <div class="stat-grid">
-      <div class="stat-card">
-        <span class="label">Avg rating</span>
-        <span class="value">2.75 <small>/ 5</small></span>
-      </div>
-      <div class="stat-card">
-        <span class="label">Avg polarity</span>
-        <span class="value">+0.14</span>
-      </div>
-      <div class="stat-card">
-        <span class="label">% positive</span>
-        <span class="value">43%</span>
-      </div>
-      <div class="stat-card">
-        <span class="label">% negative</span>
-        <span class="value">20%</span>
-      </div>
-      <div class="stat-card">
-        <span class="label">% obj. negative</span>
-        <span class="value">7%</span>
-      </div>
-      <div class="stat-card">
-        <span class="label">% subj. negative</span>
-        <span class="value">13%</span>
-      </div>
-    </div>
-    <h4>Polarity distribution</h4>
-    <div class="stacked-bar" title="positive / neutral / negative">
-      <div style="background:#5cb85c; flex: 4289">4289 positive</div>
-      <div style="background:#aaa; flex: 3676">3676 neutral</div>
-      <div style="background:#d9534f; flex: 2035">2035 negative</div>
-    </div>
-
-    <!-- Top Positives -->
     
-    <h2>Top Positives</h2>
-    <p>Clusters where users express satisfaction — useful for marketing and identifying what to preserve.</p>
+    <h3>What are users happy about?</h3>
+    
+    <p class="section-narrative"><strong>Shopping, price, and service</strong> dominate positive feedback with 1,867 mentions and a 4.58 average rating—preserve this strength while monitoring the smaller but highly-rated &quot;awesome, brilliant, fantastic&quot; cluster (474 mentions, 4.74 rating) as a potential growth area.</p>
+    
     <table class="sortable-table">
       <thead>
-        <tr><th>Cluster</th><th>Top aspects</th><th>Reviews</th><th>Avg rating</th></tr>
+        <tr><th>Theme</th><th>Top aspects</th><th>Reviews</th><th>Avg rating</th></tr>
       </thead>
       <tbody>
       
@@ -891,13 +1083,14 @@
     </table>
     
 
-    <!-- ABSA -->
     
-    <h2>Aspect Sentiment (ABSA)</h2>
-    <p>Per-aspect polarity scored independently for each (review, aspect) pair by DeBERTa ABSA. Ranked by avg polarity × log(mentions).</p>
+    <h3>Which features are loved vs hated?</h3>
+    
+    <p class="section-narrative"><strong>Watch account issues</strong> — mentioned in 414 reviews with strongly negative sentiment (−0.73) — while <strong>bugs</strong>, though less frequent at 70 mentions, show the most severe negativity (−0.98), suggesting both scale and intensity problems to investigate.</p>
+    
 
     
-    <h3>Top Loved Features</h3>
+    <h4>Loved</h4>
     
     
     <div class="absa-bar-row">
@@ -959,7 +1152,7 @@
     
 
     
-    <h3>Top Hated Features</h3>
+    <h4>Hated</h4>
     
     
     <div class="absa-bar-row">
@@ -1020,351 +1213,23 @@
     
     
     
-
-    <!-- Urgent reviews -->
-    <h2>Most Urgent Reviews</h2>
-    
-    <p>Top reviews by actionability score.</p>
-    <table class="sortable-table">
-      <thead>
-        <tr><th>Urgency</th><th>Rating</th><th>Emotion</th><th>Review</th></tr>
-      </thead>
-      <tbody>
-      
-        <tr>
-          <td>1.00</td>
-          <td>1</td>
-          <td>surprise</td>
-          <td>A month to get stuff as an Amazon prime member is ridicules. The the one that i paid extra to get in 2 days is now behind too! What the heck</td>
-        </tr>
-      
-        <tr>
-          <td>1.00</td>
-          <td>1</td>
-          <td>neutral</td>
-          <td>Extremely slow and buggy, just a complete mess of an app, even though I have to use it it&#39;s super frustrating with dead clicks, bad response</td>
-        </tr>
-      
-        <tr>
-          <td>1.00</td>
-          <td>1</td>
-          <td>neutral</td>
-          <td>Bring back the buy now option. I often keep things in my basket to buy another time which means I affectively can&#39;t order things on my phone</td>
-        </tr>
-      
-        <tr>
-          <td>1.00</td>
-          <td>1</td>
-          <td>disgust</td>
-          <td>This latest update is a complete mess. I can&#39;t get my orders through unless you pay for already pricy Prime Membership. The save later list</td>
-        </tr>
-      
-        <tr>
-          <td>1.00</td>
-          <td>1</td>
-          <td>neutral</td>
-          <td>glitchy and not letting me click items if I set to buy from a certain seller or other similar settings.</td>
-        </tr>
-      
-        <tr>
-          <td>1.00</td>
-          <td>1</td>
-          <td>sadness</td>
-          <td>Amazon Is Not What It Once Was!!! Amazon Prime members, will not receive your 2 day delivery, nor will you receive your next day delivery. T</td>
-        </tr>
-      
-        <tr>
-          <td>1.00</td>
-          <td>1</td>
-          <td>sadness</td>
-          <td>never used it to know but i apparently had an account and that si called account cant be logged on or recovered? so i am basically unable to</td>
-        </tr>
-      
-        <tr>
-          <td>1.00</td>
-          <td>1</td>
-          <td>neutral</td>
-          <td>Amazon delete button works. I won&#39;t be smelling those apricots in my poo</td>
-        </tr>
-      
-        <tr>
-          <td>1.00</td>
-          <td>2</td>
-          <td>neutral</td>
-          <td>When an Amazon driver doesn&#39;t take a picture I can&#39;t leave them a review on how they did. Please fix the app so we can leave them a review w</td>
-        </tr>
-      
-        <tr>
-          <td>1.00</td>
-          <td>1</td>
-          <td>neutral</td>
-          <td>Probably won&#39;t be renewing my Prime Subscription since i can&#39;t install on my tablet. I use the app on my tablet to be able to browse, track</td>
-        </tr>
-      
-      </tbody>
-    </table>
-    
-
-    <!-- Emotions -->
-    <h2>Emotion Distribution</h2>
-    
-    <table class="sortable-table">
-      <thead>
-        <tr><th>Emotion</th><th>Count</th><th>Share</th></tr>
-      </thead>
-      <tbody>
-      
-        <tr>
-          <td>neutral</td>
-          <td>3643</td>
-          <td>36%</td>
-        </tr>
-      
-        <tr>
-          <td>sadness</td>
-          <td>1889</td>
-          <td>19%</td>
-        </tr>
-      
-        <tr>
-          <td>joy</td>
-          <td>1693</td>
-          <td>17%</td>
-        </tr>
-      
-        <tr>
-          <td>surprise</td>
-          <td>919</td>
-          <td>9%</td>
-        </tr>
-      
-        <tr>
-          <td>anger</td>
-          <td>874</td>
-          <td>9%</td>
-        </tr>
-      
-        <tr>
-          <td>disgust</td>
-          <td>691</td>
-          <td>7%</td>
-        </tr>
-      
-        <tr>
-          <td>fear</td>
-          <td>291</td>
-          <td>3%</td>
-        </tr>
-      
-      </tbody>
-    </table>
-    
-
-    <!-- Entities -->
-    
-    <h2>Mentioned Entities (companies & products)</h2>
-    <table class="sortable-table">
-      <thead>
-        <tr><th>Entity</th><th>Mentions</th></tr>
-      </thead>
-      <tbody>
-      
-        <tr><td>Android</td><td>68</td></tr>
-      
-        <tr><td>Google</td><td>61</td></tr>
-      
-        <tr><td>Samsung</td><td>57</td></tr>
-      
-        <tr><td>Walmart</td><td>52</td></tr>
-      
-        <tr><td>Rufus</td><td>40</td></tr>
-      
-        <tr><td>eBay</td><td>25</td></tr>
-      
-        <tr><td>USPS</td><td>11</td></tr>
-      
-        <tr><td>OTP</td><td>11</td></tr>
-      
-        <tr><td>Lenovo</td><td>8</td></tr>
-      
-        <tr><td>Tablet</td><td>8</td></tr>
-      
-      </tbody>
-    </table>
-    
-
-    <!-- Aspect Index -->
-    
-    <h2>Aspect Index</h2>
-    <p>Top aspects from 1–2★ reviews and the priority issue they most belong to.</p>
-    <input type="text" class="filter-input" placeholder="Filter aspects…" id="aspect-filter">
-    <table class="sortable-table" id="aspect-index-table">
-      <thead>
-        <tr><th>Aspect</th><th>Mentions in 1-2★</th><th>Primary issue</th></tr>
-      </thead>
-      <tbody>
-      
-        <tr>
-          <td>item</td>
-          <td>604</td>
-          <td>
-            
-              <a href="#issue-3">Issue 3</a>
-            
-          </td>
-        </tr>
-      
-        <tr>
-          <td>order</td>
-          <td>590</td>
-          <td>
-            
-              <a href="#issue-5">Issue 5</a>
-            
-          </td>
-        </tr>
-      
-        <tr>
-          <td>service</td>
-          <td>524</td>
-          <td>
-            
-              <a href="#issue-3">Issue 3</a>
-            
-          </td>
-        </tr>
-      
-        <tr>
-          <td>tablet</td>
-          <td>373</td>
-          <td>
-            
-              <a href="#issue-4">Issue 4</a>
-            
-          </td>
-        </tr>
-      
-        <tr>
-          <td>account</td>
-          <td>358</td>
-          <td>
-            
-              <a href="#issue-1">Issue 1</a>
-            
-          </td>
-        </tr>
-      
-        <tr>
-          <td>delivery</td>
-          <td>358</td>
-          <td>
-            
-              <a href="#issue-5">Issue 5</a>
-            
-          </td>
-        </tr>
-      
-        <tr>
-          <td>money</td>
-          <td>314</td>
-          <td>
-            
-              <a href="#issue-3">Issue 3</a>
-            
-          </td>
-        </tr>
-      
-        <tr>
-          <td>product</td>
-          <td>311</td>
-          <td>
-            
-              cluster 2 (not in top issues)
-            
-          </td>
-        </tr>
-      
-        <tr>
-          <td>package</td>
-          <td>287</td>
-          <td>
-            
-              <a href="#issue-5">Issue 5</a>
-            
-          </td>
-        </tr>
-      
-        <tr>
-          <td>update</td>
-          <td>276</td>
-          <td>
-            
-              <a href="#issue-2">Issue 2</a>
-            
-          </td>
-        </tr>
-      
-        <tr>
-          <td>day</td>
-          <td>246</td>
-          <td>
-            
-              <a href="#issue-5">Issue 5</a>
-            
-          </td>
-        </tr>
-      
-        <tr>
-          <td>option</td>
-          <td>231</td>
-          <td>
-            
-              <a href="#issue-2">Issue 2</a>
-            
-          </td>
-        </tr>
-      
-        <tr>
-          <td>phone</td>
-          <td>223</td>
-          <td>
-            
-              <a href="#issue-2">Issue 2</a>
-            
-          </td>
-        </tr>
-      
-        <tr>
-          <td>card</td>
-          <td>222</td>
-          <td>
-            
-              <a href="#issue-1">Issue 1</a>
-            
-          </td>
-        </tr>
-      
-        <tr>
-          <td>company</td>
-          <td>203</td>
-          <td>
-            
-              <a href="#issue-3">Issue 3</a>
-            
-          </td>
-        </tr>
-      
-      </tbody>
-    </table>
-    
   </section>
 
-  <footer>
+  <!-- By the numbers — Phase IX one-line stats footer. Replaces the
+       multi-bullet Feature Summary that used to close the report and the
+       6-card Overall Sentiment grid that used to lead Detailed Analysis. -->
+  <footer class="by-the-numbers">
     <p>
+      <strong>By the numbers:</strong>
       10,000 reviews ·
-      3,928 unique aspects ·
-      11 themes ·
-      8 issues
+      2.75★ avg ·
+      +0.14 polarity ·
+      20% negative
+      (7% bug-shaped,
+       13% emotional) ·
+      3,928 aspects ·
+      11 topics ·
+      8 priority issues
     </p>
   </footer>
 </main>
@@ -1375,17 +1240,43 @@
   const reportData = JSON.parse(document.getElementById('report-data').textContent);
 
   // -- Sparklines (Chart.js) ---------------------------------------------
+  // Parse "YYYY-MM-DD" as local-tz dates so labels don't show off-by-one
+  // for west-of-UTC viewers (default `new Date(s)` parses ISO as UTC).
+  function parseISODate(s) {
+    const [y, m, d] = s.split('-').map(Number);
+    return new Date(y, m - 1, d);
+  }
+  function fmtShort(d) {
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+  // Compute a bucket's date range "Feb 12 – Mar 5" given the chart's overall
+  // span and number of buckets. Used in tooltips so each bar is grounded
+  // in real time.
+  function bucketDateLabel(idx, total, earliestStr, latestStr) {
+    const start = parseISODate(earliestStr);
+    const end = parseISODate(latestStr);
+    const spanMs = end - start;
+    const bucketMs = spanMs / total;
+    const bucketStart = new Date(start.getTime() + bucketMs * idx);
+    const bucketEnd = new Date(start.getTime() + bucketMs * (idx + 1));
+    return `${fmtShort(bucketStart)} – ${fmtShort(bucketEnd)}`;
+  }
+
   reportData.issues.forEach((issue, idx) => {
     if (!issue.sparkline) return;
     const canvas = document.querySelector(`canvas[data-sparkline="${idx}"]`);
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
+    const sp = issue.sparkline;
+    const labels = sp.buckets.map((_, i) =>
+      bucketDateLabel(i, sp.buckets.length, sp.earliest, sp.latest)
+    );
     new Chart(ctx, {
       type: 'bar',
       data: {
-        labels: issue.sparkline.buckets.map((_, i) => `Bucket ${i+1}`),
+        labels: labels,
         datasets: [{
-          data: issue.sparkline.buckets,
+          data: sp.buckets,
           backgroundColor: '#3b82f6',
           borderRadius: 2,
           barThickness: 'flex',
@@ -1400,8 +1291,10 @@
           legend: { display: false },
           tooltip: {
             callbacks: {
-              title: (items) => `Period ${items[0].dataIndex + 1}/12`,
-              label: (item) => `${item.parsed.y} mentions`,
+              // `label` is the bucket date range (set above);
+              // surface it as the title so the tooltip leads with "when".
+              title: (items) => items[0].label,
+              label: (item) => `${item.parsed.y} mention${item.parsed.y === 1 ? '' : 's'}`,
             },
           },
         },

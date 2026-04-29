@@ -221,3 +221,252 @@ def test_save_replaces_on_duplicate_key(temp_db):
     db.save_issue_label("k1", "Old label", "claude-haiku-4-5")
     db.save_issue_label("k1", "New label", "claude-haiku-4-5")
     assert db.load_issue_label("k1") == "New label"
+
+
+# ---------------------------------------------------------------------------
+# Phase VIII — Key takeaways (LLM synthesis)
+# ---------------------------------------------------------------------------
+
+# Minimal report-data shape that's enough to exercise the synthesis path.
+# Mirrors the data dict produced by build_report_data, but only the fields
+# generate_key_takeaways() actually reads.
+def _minimal_report_data():
+    return {
+        "issues": [
+            {
+                "rank":         1,
+                "label":        "Slow delivery and damaged packages",
+                "count":        100,
+                "avg_rating":   1.4,
+                "score":        0.74,
+                "bug_complaint": {"obj_share": 0.62},
+                "emotions":     [{"label": "anger", "share": 0.4}],
+                "entities":     [{"text": "Walmart", "count": 10}],
+                "app_versions": [{"version": "17.4", "count": 80}],
+            }
+        ],
+        "run_delta": {
+            "first_run":  False,
+            "omitted":    False,
+            "escalating": [
+                {"label": "Issue 1", "current_count": 100, "prior_count": 70, "pct_change": 42.0}
+            ],
+            "improving": [],
+            "new":       [],
+            "resolved":  [],
+        },
+        "absa": {
+            "loved": [{"aspect": "prime", "avg_polarity": 0.7, "count": 20}],
+            "hated": [{"aspect": "login", "avg_polarity": -0.5, "count": 30}],
+        },
+        "positives":       {"entries": [{"label": "prime, membership", "count": 20, "avg_rating": 4.7}]},
+        "entities":        [{"text": "Walmart", "count": 10}],
+        "feature_summary": {"n_reviews": 100, "n_issues": 1},
+        "overall":         {"avg_rating": 1.4, "neg_pct": 0.6},
+    }
+
+
+def test_takeaways_returns_bullets_on_happy_path(monkeypatch, temp_db):
+    """The mocked LLM returns markdown bullets; generate_key_takeaways parses
+    them into a list of strings."""
+    raw_response = (
+        "- **Fix Issue 1** because it grew 42% since last run.\n"
+        "- **Investigate v17.4** — most mentions concentrate there.\n"
+        "- **Preserve Prime** which is the strongest positive."
+    )
+    client = _FakeClient(responses=[raw_response])
+    _patch_client(monkeypatch, client)
+
+    bullets = llm.generate_key_takeaways(_minimal_report_data())
+    assert bullets is not None
+    assert len(bullets) == 3
+    assert "**Fix Issue 1**" in bullets[0]
+
+
+def test_takeaways_caches_on_repeat(monkeypatch, temp_db):
+    """Second call with the same data should hit the cache — no API call."""
+    client = _FakeClient(responses=["- **A** thing.\n- **B** thing."])
+    _patch_client(monkeypatch, client)
+
+    data = _minimal_report_data()
+    first = llm.generate_key_takeaways(data)
+    second = llm.generate_key_takeaways(data)
+
+    assert first == second
+    assert len(client.calls) == 1, "second call should hit cache, not API"
+
+
+def test_takeaways_returns_none_without_api_key(monkeypatch, temp_db):
+    """Missing ANTHROPIC_API_KEY → graceful skip (renderers omit section)."""
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    bullets = llm.generate_key_takeaways(_minimal_report_data())
+    assert bullets is None
+
+
+def test_takeaways_returns_none_when_api_raises(monkeypatch, temp_db):
+    """Network / auth errors must not propagate — caller falls back to None."""
+    client = _FakeClient(raise_on_call=RuntimeError("simulated 500"))
+    _patch_client(monkeypatch, client)
+
+    bullets = llm.generate_key_takeaways(_minimal_report_data())
+    assert bullets is None
+
+
+def test_takeaways_returns_none_on_empty_response(monkeypatch, temp_db):
+    """If the LLM returns whitespace-only or no parseable bullets, skip."""
+    client = _FakeClient(responses=["    \n    \n"])
+    _patch_client(monkeypatch, client)
+
+    bullets = llm.generate_key_takeaways(_minimal_report_data())
+    assert bullets is None
+
+
+def test_takeaways_returns_none_for_empty_data(monkeypatch, temp_db):
+    """Don't call the API when there's nothing to synthesize."""
+    client = _FakeClient()
+    _patch_client(monkeypatch, client)
+
+    bullets = llm.generate_key_takeaways({"issues": [], "run_delta": {}})
+    assert bullets is None
+    assert client.calls == []
+
+
+def test_takeaways_cache_key_stable_across_dict_order(monkeypatch, temp_db):
+    """Same content, different dict iteration order → same cache key."""
+    a = {"a": 1, "b": [1, 2, 3]}
+    b = {"b": [1, 2, 3], "a": 1}
+    assert llm.compute_takeaways_cache_key(a) == llm.compute_takeaways_cache_key(b)
+
+
+def test_parse_bullets_handles_continuation_lines():
+    """Multi-line bullets (LLM wrapping its output) should be joined."""
+    raw = (
+        "- **First bullet** sentence one.\n"
+        "  Sentence two on a continuation line.\n"
+        "- **Second bullet** stands alone."
+    )
+    bullets = llm._parse_bullets(raw)
+    assert len(bullets) == 2
+    assert "Sentence two" in bullets[0]
+
+
+def test_parse_bullets_handles_asterisk_and_numbered():
+    """LLM might emit `* foo` or `1. foo` instead of `- foo`."""
+    raw = (
+        "* **A** asterisk.\n"
+        "1. **B** numbered.\n"
+        "- **C** dashed."
+    )
+    bullets = llm._parse_bullets(raw)
+    assert len(bullets) == 3
+
+
+def test_parse_bullets_drops_preamble():
+    """If the LLM adds a preamble like 'Here are your takeaways:', drop it."""
+    raw = (
+        "Here are the key takeaways:\n"
+        "- **Real** bullet.\n"
+        "- **Another** bullet."
+    )
+    bullets = llm._parse_bullets(raw)
+    assert len(bullets) == 2
+
+
+def test_takeaways_save_load_round_trip(temp_db):
+    """The takeaways-cache helpers themselves round-trip cleanly."""
+    db.save_takeaways("k1", "- **Foo** bar.", "claude-haiku-4-5")
+    assert db.load_takeaways("k1") == "- **Foo** bar."
+    assert db.load_takeaways("nonexistent") is None
+
+
+# ---------------------------------------------------------------------------
+# Phase IX — Per-section narratives
+# ---------------------------------------------------------------------------
+
+def test_section_narrative_happy_path(monkeypatch, temp_db):
+    """The mocked LLM returns a one-sentence lead; cleaned + cached + returned."""
+    client = _FakeClient(responses=["**Prime membership** leads, with 200 reviews at 4.5★."])
+    _patch_client(monkeypatch, client)
+
+    out = llm.generate_section_narrative("positives", {"entries": [{"label": "prime", "count": 200}]})
+    assert out is not None
+    assert "Prime membership" in out
+
+
+def test_section_narrative_caches(monkeypatch, temp_db):
+    """Second call with same data short-circuits on cache."""
+    client = _FakeClient(responses=["**A** thing."])
+    _patch_client(monkeypatch, client)
+
+    section_data = {"entries": [{"label": "x", "count": 1}]}
+    first = llm.generate_section_narrative("positives", section_data)
+    second = llm.generate_section_narrative("positives", section_data)
+    assert first == second
+    assert len(client.calls) == 1
+
+
+def test_section_narrative_cache_keys_separated_by_section(monkeypatch, temp_db):
+    """Same data passed under different section names → different cache keys.
+    A 'positives' result must not be served when asking for 'absa'."""
+    client = _FakeClient(responses=["**Positives** lead.", "**ABSA** says different."])
+    _patch_client(monkeypatch, client)
+
+    section_data = {"entries": [{"label": "x"}]}
+    p = llm.generate_section_narrative("positives", section_data)
+    a = llm.generate_section_narrative("absa", section_data)
+    assert p != a
+    assert len(client.calls) == 2
+
+
+def test_section_narrative_returns_none_on_empty_data(monkeypatch, temp_db):
+    """No data → no API call, no narrative."""
+    client = _FakeClient()
+    _patch_client(monkeypatch, client)
+
+    assert llm.generate_section_narrative("positives", {}) is None
+    assert llm.generate_section_narrative("positives", None) is None
+    assert client.calls == []
+
+
+def test_section_narrative_returns_none_on_api_failure(monkeypatch, temp_db):
+    """API errors must not propagate — caller falls back to no narrative."""
+    client = _FakeClient(raise_on_call=RuntimeError("simulated 500"))
+    _patch_client(monkeypatch, client)
+
+    out = llm.generate_section_narrative("positives", {"entries": [{"label": "x"}]})
+    assert out is None
+
+
+def test_section_narrative_returns_none_without_api_key(monkeypatch, temp_db):
+    """Missing key → graceful skip (no warning spam — takeaways logs once)."""
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    out = llm.generate_section_narrative("positives", {"entries": [{"label": "x"}]})
+    assert out is None
+
+
+def test_section_narrative_strips_leading_bullet(monkeypatch, temp_db):
+    """If the LLM (against instructions) outputs a bullet marker, strip it."""
+    client = _FakeClient(responses=["- **Action** is the lead."])
+    _patch_client(monkeypatch, client)
+
+    out = llm.generate_section_narrative("positives", {"entries": [{"label": "x"}]})
+    assert not out.startswith("-")
+    assert out.startswith("**Action**")
+
+
+def test_section_narrative_save_load_round_trip(temp_db):
+    """The section-narrative cache helpers themselves round-trip cleanly."""
+    db.save_section_narrative("k1", "**Foo** bar.", "claude-haiku-4-5")
+    assert db.load_section_narrative("k1") == "**Foo** bar."
+    assert db.load_section_narrative("nonexistent") is None
+
+
+def test_section_narrative_load_defensive_against_missing_table(temp_db):
+    """Stale schemas (table doesn't exist) treat as cache miss, not crash."""
+    import sqlite3
+    conn = sqlite3.connect(db.DB_PATH)
+    conn.execute("DROP TABLE IF EXISTS section_narratives_cache")
+    conn.commit()
+    conn.close()
+
+    assert db.load_section_narrative("anything") is None  # no exception

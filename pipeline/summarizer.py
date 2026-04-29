@@ -24,7 +24,11 @@ from pipeline.issue_tracking import (
     bucket_dates,
     render_sparkline,
 )
-from pipeline.llm import generate_cluster_label
+from pipeline.llm import (
+    generate_cluster_label,
+    generate_key_takeaways,
+    generate_section_narrative,
+)
 
 REPORT_DIR = "reports"
 
@@ -61,6 +65,22 @@ TFIDF_MIN_CLUSTER_SIZE = 20
 
 # ABSA: minimum mentions for an aspect to appear in loved/hated tables.
 ABSA_MIN_MENTIONS = 5
+
+# Render-time noise filter for the per-issue "Mentions" pills (Phase X).
+# These show up because spaCy's NER mistags them as ORG / PRODUCT (e.g.
+# "Newest collection" reads as a brand name). Filtering at render time
+# keeps the cached features intact — bumping FEATURE_SCHEMA_VERSION just
+# to drop these would force a full ABSA recompute, which isn't worth it.
+# Lowercased; the comparison lowercases the entity text before checking.
+RENDER_ENTITY_NOISE = {
+    # Amazon-specific internals that aren't really mentioned competitors
+    "rufus", "alexa", "amazon",
+    # Domain words spaCy picks up as ORGs
+    "customer", "customer service", "customer support",
+    "newest", "tablet", "tablets",
+    # Common platform words that aren't "competitors"
+    "android", "ios",
+}
 
 
 def _aspect_names(review):
@@ -136,10 +156,78 @@ def build_report_data(reviews, app_name, app_slug=None, run_id=None,
             "issues_full":  issues,  # full unfiltered list (for terminal summary)
         },
     }
+    # Tag each top issue with its Run Delta classification (escalating /
+    # improving / new / stable). Computed here, after both issues_data and
+    # run_delta_data exist, so the leaderboard can show trend arrows
+    # without each row having to re-derive them. (Phase X)
+    _attach_trends_to_issues(data)
+
     # Run summary is derived from issues + run_delta + feature_summary, so it
     # has to be computed after the rest of the dict is assembled.
     data["run_summary"] = _run_summary_data(data)
+
+    # Key takeaways — the "so what?" layer. Synthesizes everything else into
+    # 3-5 actionable bullets via Claude Haiku. Returns None on missing API
+    # key / API failure → renderers omit the section gracefully.
+    data["takeaways"] = _takeaways_data(data)
+
+    # Per-section narratives (Phase IX) — one-sentence leads for the kept
+    # detail sections so each renders with insight, not just a table.
+    # Same graceful fallback: None on no key / API error → renderer omits
+    # the lead but keeps the section's data.
+    _attach_section_narratives(data)
+
     return data
+
+
+def _attach_section_narratives(data):
+    """Generate LLM lead sentences for the kept Detailed Analysis sections
+    (Phase IX). Stores into `data['positives']['narrative']` and
+    `data['absa']['narrative']`. Each call is independently cached so a
+    failure on one doesn't block the other."""
+    positives = data.get("positives") or {}
+    if positives.get("entries"):
+        positives["narrative"] = generate_section_narrative("positives", positives)
+
+    absa = data.get("absa") or {}
+    if absa.get("loved") or absa.get("hated"):
+        absa["narrative"] = generate_section_narrative("absa", absa)
+
+
+def _attach_trends_to_issues(data):
+    """Tag each top priority issue with its Run Delta classification so the
+    leaderboard table can show trend arrows at-a-glance (Phase X).
+
+    Each issue gets a `trend` field of shape:
+        {"classification": "escalating" | "improving" | "new" | "stable" | None,
+         "pct_change": float | None}
+
+    `None` classification means "no comparison available" (first run or
+    snapshotting disabled). The leaderboard renderer collapses that to a
+    blank cell.
+    """
+    rd = data.get("run_delta") or {}
+    issues = data.get("issues") or []
+
+    if rd.get("omitted") or rd.get("first_run"):
+        for issue in issues:
+            issue["trend"] = {"classification": None, "pct_change": None}
+        return
+
+    # Build cluster_id → (classification, pct_change) lookup from the delta
+    # buckets. Resolved issues don't appear in current `issues` so they
+    # don't need handling here.
+    by_cid = {}
+    for entry in rd.get("escalating", []) or []:
+        by_cid[entry["cluster_id"]] = ("escalating", entry["pct_change"])
+    for entry in rd.get("improving", []) or []:
+        by_cid[entry["cluster_id"]] = ("improving", entry["pct_change"])
+    for entry in rd.get("new", []) or []:
+        by_cid[entry["cluster_id"]] = ("new", None)
+
+    for issue in issues:
+        cls, pct = by_cid.get(issue["cluster_id"], ("stable", None))
+        issue["trend"] = {"classification": cls, "pct_change": pct}
 
 
 # --- Per-section data extractors -----------------------------------------
@@ -211,6 +299,11 @@ def _issues_data(issues, corpus_df, total_reviews, top_n=TOP_ISSUES_N):
         for r in cluster:
             for ent in r.get("entities") or []:
                 key = ent["text"].lower()
+                # Drop NER false-positives that survived the extraction-time
+                # filter (cache predates the stopword list update). Cheaper
+                # than invalidating the whole feature cache.
+                if key in RENDER_ENTITY_NOISE:
+                    continue
                 entity_counter[key] += 1
                 entity_display.setdefault(key, ent["text"])
         top_entities = [
@@ -573,6 +666,23 @@ def _run_summary_data(data):
     return {"ribbon": ribbon, "narrative": narrative}
 
 
+def _takeaways_data(data):
+    """
+    Generate executive takeaways for this run. Returns:
+        {bullets: list[str] | None, generated: bool}
+
+    `bullets` is a list of 3-5 short markdown strings (each may contain
+    `**bold**` for emphasis), or None when the LLM is unavailable / errored
+    / there's no data worth summarizing. Renderers should treat None as
+    "omit the section" — it's a polish layer, not required reading.
+    """
+    bullets = generate_key_takeaways(data)
+    return {
+        "bullets":   bullets,
+        "generated": bool(bullets),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Markdown rendering (Phase VI: thin wrappers over the data dict)
 # ---------------------------------------------------------------------------
@@ -648,6 +758,19 @@ def render_html(data):
         trim_blocks=False,
         lstrip_blocks=False,
     )
+    # Filter that escapes HTML first (so review text / labels can't break out)
+    # then converts the **bold** markers the LLM produces into <strong>. Used
+    # in the takeaways section. Chain with `| safe` in the template since
+    # the escape happens inside the filter.
+    import html as _html_mod
+    import re as _re
+    def _bold_md_to_html(text):
+        if not text:
+            return ""
+        escaped = _html_mod.escape(text)
+        return _re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
+    env.filters["bold_md_to_html"] = _bold_md_to_html
+
     template = env.get_template("report.html.j2")
 
     # The JS only needs per-issue sparkline data — strip the rest to keep
@@ -664,6 +787,7 @@ def render_html(data):
         elevator_pitch=ELEVATOR_PITCH,
         header=data["header"],
         run_summary=data["run_summary"],
+        takeaways=data["takeaways"],
         overall=data["overall"],
         issues=data["issues"],
         run_delta=data["run_delta"],
@@ -690,19 +814,17 @@ def render_markdown(data):
     sections = [
         _header_md(data["header"]),
         _run_summary_md(data["run_summary"]),
+        _takeaways_md(data["takeaways"]),
         _run_delta_md(data["run_delta"]),
         _priority_issues_md(data["issues"]),
-        # Supporting analysis (lower visual weight in the HTML; in markdown
-        # we keep them as ordinary sections but visually after a separator).
+        # Phase IX cull: Most Urgent Reviews, Mentioned Entities, Emotion
+        # Distribution, and Aspect Index are dropped from rendering. Their
+        # per-issue equivalents inside the issue cards carry that signal
+        # already; the global tables didn't earn their space.
         _md_separator("Detailed analysis"),
-        _overall_sentiment_md(data["overall"]),
         _positives_md(data["positives"]),
         _absa_md(data["absa"]),
-        _urgent_md(data["urgent"]),
-        _emotion_md(data["emotions"]),
-        _entities_md(data["entities"]),
-        _aspect_index_md(data["aspect_index"]),
-        _feature_summary_md(data["feature_summary"]),
+        _by_the_numbers_md(data["overall"], data["feature_summary"]),
     ]
     return "\n\n".join(s for s in sections if s) + "\n"
 
@@ -726,6 +848,21 @@ def _header_md(data):
         f"{data['review_count']:,} reviews · generated {data['generated_at']} "
         f"· run `{data['run_id']}`"
     )
+
+
+def _takeaways_md(data):
+    """Render the LLM-generated key takeaways as a leading bulleted list.
+
+    The bullets already contain `**bold**` markers from the LLM — markdown
+    viewers render them as bold; we leave them untouched. Returns "" when
+    the LLM call failed / was skipped, so the section is omitted entirely
+    in plain-text mode (cleaner than a half-rendered placeholder).
+    """
+    bullets = data.get("bullets")
+    if not bullets:
+        return ""
+    body = "\n".join(f"- {b}" for b in bullets)
+    return f"## Key takeaways\n{body}"
 
 
 def _run_summary_md(data):
@@ -1135,10 +1272,12 @@ def _run_delta_md(data):
     resolved = data["resolved"]
 
     if not (escalating or improving or new_ or resolved):
+        # Compact "stable" state — single-line, doesn't claim a full section
+        # heading on every run when nothing changed. Markdown doesn't have
+        # subtle visual treatment, so just use a smaller heading + tight line.
         return (
-            f"## Run Delta\n"
-            f"Compared to prior run `{prior_run_id}`. "
-            f"_No significant changes since prior run._"
+            f"## Run Delta — stable\n"
+            f"_No significant changes vs prior run `{prior_run_id}`._"
         )
 
     lines = [
@@ -1183,14 +1322,22 @@ def _run_delta_section(matches, resolved, issues, prior_run_id, app_slug):
 def _positives_md(data):
     entries = data.get("entries") or []
     if not entries:
-        return "## Top Positives\n_No strongly positive clusters detected._"
+        return "## What are users happy about?\n_No strongly positive clusters detected._"
 
-    lines = [
-        "## Top Positives",
-        "Clusters where users express satisfaction — useful for "
-        "marketing and identifying what to preserve.",
+    lines = ["## What are users happy about?"]
+    narrative = data.get("narrative")
+    if narrative:
+        lines.append(narrative)
+    else:
+        # Static fallback when the LLM is unavailable — still gives the reader
+        # a one-line orientation rather than dropping straight into the table.
+        lines.append(
+            f"{len(entries)} cluster{'s' if len(entries) != 1 else ''} skew positive — "
+            "useful for marketing and identifying what to preserve."
+        )
+    lines += [
         "",
-        "| Cluster | Top aspects | Reviews | Avg rating |",
+        "| Theme | Top aspects | Reviews | Avg rating |",
         "|---|---|---:|---:|",
     ]
     for it in entries:
@@ -1251,10 +1398,32 @@ def _representative_reviews(cluster_reviews, n=3, max_len=140):
         if key in seen:
             continue
         seen.add(key)
-        picked.append(body[:max_len])
+        picked.append(_truncate_at_word(body, max_len))
         if len(picked) == n:
             break
     return picked
+
+
+def _truncate_at_word(text, max_len):
+    """Truncate `text` to at most `max_len` chars (including the trailing
+    ellipsis), breaking at the last word boundary before the cap. Avoids
+    the common "...had no clue how they got t" mid-word cut.
+
+    `max_len` is the hard cap on output length — the ellipsis is included
+    in that budget, so callers don't have to reason about it. If a word
+    boundary isn't reachable in the second half of the cap (a single 100+
+    char word), fall back to a hard cap so we still produce bounded output.
+    """
+    if len(text) <= max_len:
+        return text
+    # Reserve one character for the ellipsis so the final output never
+    # exceeds max_len.
+    budget = max_len - 1
+    truncated = text[:budget]
+    last_space = truncated.rfind(" ")
+    if last_space > budget // 2:
+        truncated = truncated[:last_space]
+    return truncated.rstrip(" ,;:") + "…"
 
 
 def _emotion_md(data):
@@ -1343,12 +1512,14 @@ def _absa_md(data):
     if not loved and not hated:
         return ""
 
-    lines = [
-        "## Aspect Sentiment (ABSA)",
-        "Per-aspect polarity scored independently for each (review, aspect) pair "
-        "by DeBERTa ABSA. Ranked by avg polarity × log(mentions) — balances "
-        "confidence against volume.",
-    ]
+    lines = ["## Which features are loved vs hated?"]
+    narrative = data.get("narrative")
+    if narrative:
+        lines.append(narrative)
+    else:
+        lines.append(
+            "Per-aspect polarity scored independently. Ranked by avg polarity × log(mentions)."
+        )
 
     if loved:
         lines += [
@@ -1391,6 +1562,28 @@ def _feature_summary_md(data):
 def _feature_summary(reviews, issues):
     """Back-compat wrapper."""
     return _feature_summary_md(_feature_summary_data(reviews, issues))
+
+
+def _by_the_numbers_md(overall, feature_summary):
+    """One-line stats footer — replaces the old 6-card Overall Sentiment grid
+    and the multi-bullet Feature Summary that used to close the report.
+
+    Renders a single inline-stats line instead. The headlines (review count,
+    avg rating, escalating/new/resolved counts) already live in the at-a-glance
+    ribbon at the top, so this just provides the dive-deeper polarity / topic
+    counts without forcing a reader to scan a table for them.
+    """
+    return (
+        "## By the numbers\n"
+        f"{feature_summary['n_reviews']:,} reviews · "
+        f"{overall['avg_rating']:.2f}★ avg · "
+        f"{overall['avg_polarity']:+.2f} polarity · "
+        f"{overall['neg_pct']:.0%} negative "
+        f"({overall['obj_neg_pct']:.0%} bug-shaped, {overall['subj_neg_pct']:.0%} emotional) · "
+        f"{feature_summary['unique_aspects']:,} aspects · "
+        f"{feature_summary['themes']} topics · "
+        f"{feature_summary['n_issues']} priority issues"
+    )
 
 
 def _print_terminal_summary(reviews, app_name, issues):

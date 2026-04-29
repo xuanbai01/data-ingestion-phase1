@@ -261,7 +261,7 @@ def test_representative_reviews_dedupes_identical_bodies():
 
 
 def test_representative_reviews_truncates_long_bodies():
-    """Long review bodies are capped at max_len."""
+    """Long review bodies are capped at max_len (ellipsis included in budget)."""
     cluster = [
         {"body": "X" * 1000, "embedding": [0.0] * 4, "thumbs_up": 0},
         {"body": "Y" * 1000, "embedding": [0.1] * 4, "thumbs_up": 0},
@@ -270,6 +270,118 @@ def test_representative_reviews_truncates_long_bodies():
     picks = summ._representative_reviews(cluster, n=3, max_len=50)
     for p in picks:
         assert len(p) <= 50
+
+
+def test_truncate_at_word_breaks_at_space():
+    """Phase X: truncation prefers word boundaries over mid-word cuts."""
+    text = "the quick brown fox jumps over the lazy dog"
+    out = summ._truncate_at_word(text, 25)
+    assert out.endswith("…")
+    # Last char before ellipsis should be a letter (end of a word), not mid-word
+    assert out[-2].isalpha()
+    # No trailing partial word like "ju..."
+    assert "jumps over" in text  # sanity
+    assert " " not in out[-3:-1]  # the chars right before "…" shouldn't include a stray space
+
+
+def test_truncate_at_word_falls_back_for_unbreakable_input():
+    """Single-word inputs longer than max_len fall back to hard cap."""
+    text = "X" * 100
+    out = summ._truncate_at_word(text, 30)
+    assert len(out) <= 30
+    assert out.endswith("…")
+
+
+def test_truncate_at_word_passthrough_when_short():
+    """Strings shorter than max_len pass through unchanged."""
+    assert summ._truncate_at_word("hello", 100) == "hello"
+    assert summ._truncate_at_word("", 100) == ""
+
+
+# ---------------------------------------------------------------------------
+# Phase X — entity noise filter
+# ---------------------------------------------------------------------------
+
+def test_render_entity_noise_drops_known_false_positives():
+    """Spurious NER tags (Rufus, Customer Service, Newest, Tablet) get
+    filtered at render time so they don't show up as 'mentioned entities'."""
+    np.random.seed(0)
+    e = (np.array([1, 0, 0, 0], dtype=np.float32) + np.random.randn(4) * 0.05).tolist()
+    reviews = [
+        {
+            "reviewer_name": "x",
+            "date": f"2026-01-{(i % 28) + 1:02d}",
+            "body": "issue review",
+            "rating": 1, "polarity": -0.4, "subjectivity": 0.3,
+            "urgency": 0.6, "emotion": "anger",
+            "aspects": [{"aspect": "delivery", "polarity": -0.5, "confidence": 0.8}],
+            "entities": [
+                {"text": "Walmart", "label": "ORG"},          # legit
+                {"text": "Rufus", "label": "ORG"},            # noise
+                {"text": "Customer Service", "label": "ORG"}, # noise
+                {"text": "Newest", "label": "ORG"},           # noise
+            ],
+            "embedding": e,
+            "theme_cluster": 0,
+            "app_version": "17.4",
+            "thumbs_up": 0,
+        }
+        for i in range(40)  # need ≥ 3 mentions for entities to display
+    ]
+    issues = summ._score_issues(reviews)
+    df = summ._aspect_doc_freq(reviews)
+    issues_data = summ._issues_data(issues, df, len(reviews))
+
+    surfaced = {e["text"] for e in issues_data[0]["entities"]}
+    assert "Walmart" in surfaced, "legit entities still surface"
+    for noise in ("Rufus", "Customer Service", "Newest"):
+        assert noise not in surfaced, f"noise entity {noise!r} should be filtered"
+
+
+# ---------------------------------------------------------------------------
+# Phase X — trend attachment for leaderboard arrows
+# ---------------------------------------------------------------------------
+
+def test_attach_trends_marks_first_run_with_no_classification():
+    """Without prior data, every issue gets trend.classification = None."""
+    data = {
+        "run_delta": {"first_run": True, "omitted": False},
+        "issues": [{"cluster_id": 0}, {"cluster_id": 1}],
+    }
+    summ._attach_trends_to_issues(data)
+    for issue in data["issues"]:
+        assert issue["trend"] == {"classification": None, "pct_change": None}
+
+
+def test_attach_trends_classifies_each_bucket():
+    """Issues that appear in escalating / improving / new buckets get the
+    matching classification; ones that appear in none default to 'stable'."""
+    data = {
+        "run_delta": {
+            "first_run": False, "omitted": False, "prior_run_id": "x",
+            "escalating": [{"cluster_id": 0, "pct_change": 50.0}],
+            "improving":  [{"cluster_id": 1, "pct_change": -30.0}],
+            "new":        [{"cluster_id": 2}],
+            "resolved":   [],
+        },
+        "issues": [
+            {"cluster_id": 0}, {"cluster_id": 1}, {"cluster_id": 2}, {"cluster_id": 3}
+        ],
+    }
+    summ._attach_trends_to_issues(data)
+    classifications = [i["trend"]["classification"] for i in data["issues"]]
+    assert classifications == ["escalating", "improving", "new", "stable"]
+    assert data["issues"][0]["trend"]["pct_change"] == 50.0
+
+
+def test_attach_trends_omitted_run_delta_blank():
+    """When snapshotting is off, all trends are None — leaderboard column blank."""
+    data = {
+        "run_delta": {"omitted": True},
+        "issues": [{"cluster_id": 0}],
+    }
+    summ._attach_trends_to_issues(data)
+    assert data["issues"][0]["trend"] == {"classification": None, "pct_change": None}
 
 
 # ---------------------------------------------------------------------------

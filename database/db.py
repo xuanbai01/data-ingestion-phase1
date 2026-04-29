@@ -110,6 +110,30 @@ def create_tables():
             model       TEXT NOT NULL,
             created_at  TEXT NOT NULL
         );
+
+        -- LLM-generated executive takeaways cache (Phase VIII).
+        -- Keyed by a content hash of the synthesis input (top issues + run
+        -- delta + ABSA highlights + positives + entities). Same data → same
+        -- key → no API call on re-run. Stored as raw markdown so renderers
+        -- can adapt: HTML uses a small filter to convert **bold**, markdown
+        -- emits as-is.
+        CREATE TABLE IF NOT EXISTS takeaways_cache (
+            cache_key   TEXT PRIMARY KEY,
+            content     TEXT NOT NULL,
+            model       TEXT NOT NULL,
+            created_at  TEXT NOT NULL
+        );
+
+        -- Per-section narrative intros (Phase IX) — one-sentence leads for
+        -- the surviving Detailed Analysis sub-sections (Top Positives, ABSA).
+        -- Same shape as takeaways_cache, separate table for clarity. Cache
+        -- key includes the section name to avoid cross-section collisions.
+        CREATE TABLE IF NOT EXISTS section_narratives_cache (
+            cache_key   TEXT PRIMARY KEY,
+            content     TEXT NOT NULL,
+            model       TEXT NOT NULL,
+            created_at  TEXT NOT NULL
+        );
     """)
 
     conn.commit()
@@ -569,14 +593,23 @@ def load_prior_run_snapshots(app_slug, before_run_id):
 # ---------------------------------------------------------------------------
 
 def load_issue_label(cache_key):
-    """Return cached label string for the given cache_key, or None on miss."""
+    """Return cached label string for the given cache_key, or None on miss.
+
+    Defensive against a stale schema (table doesn't exist yet in this DB
+    file) — treated as a cache miss so first-time runs against an old
+    reviews.db just regenerate. The next create_tables() call adds the
+    table; subsequent reads work normally.
+    """
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute(
-        "SELECT label FROM issue_labels WHERE cache_key = ?",
-        (cache_key,),
-    )
-    row = cursor.fetchone()
+    try:
+        cursor.execute(
+            "SELECT label FROM issue_labels WHERE cache_key = ?",
+            (cache_key,),
+        )
+        row = cursor.fetchone()
+    except sqlite3.OperationalError:
+        row = None
     conn.close()
     return row["label"] if row else None
 
@@ -593,6 +626,89 @@ def save_issue_label(cache_key, label, model):
         VALUES (?, ?, ?, ?)
         """,
         (cache_key, label, model, now),
+    )
+    conn.commit()
+    conn.close()
+
+
+# ---------------------------------------------------------------------------
+# LLM key-takeaways cache (Phase VIII)
+# ---------------------------------------------------------------------------
+
+def load_takeaways(cache_key):
+    """Return cached takeaways markdown for the given cache_key, or None.
+
+    Defensive against a stale schema (this table was added in Phase VIII;
+    older reviews.db files won't have it yet). Missing-table is treated as
+    a cache miss; the next create_tables() adds it.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT content FROM takeaways_cache WHERE cache_key = ?",
+            (cache_key,),
+        )
+        row = cursor.fetchone()
+    except sqlite3.OperationalError:
+        row = None
+    conn.close()
+    return row["content"] if row else None
+
+
+def save_takeaways(cache_key, content, model):
+    """Insert or replace a takeaways cache row."""
+    now = datetime.now(timezone.utc).isoformat()
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT OR REPLACE INTO takeaways_cache
+            (cache_key, content, model, created_at)
+        VALUES (?, ?, ?, ?)
+        """,
+        (cache_key, content, model, now),
+    )
+    conn.commit()
+    conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Per-section narrative cache (Phase IX)
+# ---------------------------------------------------------------------------
+
+def load_section_narrative(cache_key):
+    """Return cached narrative string for the given cache_key, or None.
+
+    Defensive against stale schemas (table added in Phase IX) — same
+    pattern as load_takeaways.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT content FROM section_narratives_cache WHERE cache_key = ?",
+            (cache_key,),
+        )
+        row = cursor.fetchone()
+    except sqlite3.OperationalError:
+        row = None
+    conn.close()
+    return row["content"] if row else None
+
+
+def save_section_narrative(cache_key, content, model):
+    """Insert or replace a section-narrative cache row."""
+    now = datetime.now(timezone.utc).isoformat()
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT OR REPLACE INTO section_narratives_cache
+            (cache_key, content, model, created_at)
+        VALUES (?, ?, ?, ?)
+        """,
+        (cache_key, content, model, now),
     )
     conn.commit()
     conn.close()
