@@ -180,40 +180,19 @@ def review_exists(company_id, reviewer_name, review_date):
 
 
 def insert_reviews(company_id, reviews):
+    """Bulk-insert reviews. Duplicates are silently skipped — both `review_id`
+    and `review_hash` are UNIQUE in the schema, so `INSERT OR IGNORE` covers
+    the same review re-scraped (matches review_id) and the same content
+    re-scraped without a review_id (matches review_hash, e.g. from pre-Phase IV
+    cleaner runs)."""
     conn = get_connection()
     cursor = conn.cursor()
-
     scraped_at = datetime.now(timezone.utc).isoformat()
-    inserted = 0
-    skipped = 0
 
-    for review in reviews:
-        # Use review_id if available, otherwise fall back to hash
-        review_id = review.get("review_id")
-        review_hash = hash_review(
-            review.get("reviewer_name"),
-            review.get("date"),
-            review.get("body")
-        )
-
-        # Skip if review_id or hash already exists
-        if review_id:
-            cursor.execute("SELECT id FROM reviews WHERE review_id = ?", (review_id,))
-        else:
-            cursor.execute("SELECT id FROM reviews WHERE review_hash = ?", (review_hash,))
-
-        if cursor.fetchone():
-            skipped += 1
-            continue
-
-        cursor.execute("""
-            INSERT INTO reviews 
-                (company_id, review_id, reviewer_name, rating, title, body,
-                 review_date, thumbs_up, app_version, scraped_at, review_hash)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
+    rows = [
+        (
             company_id,
-            review_id,
+            review.get("review_id"),
             review.get("reviewer_name"),
             review.get("rating"),
             review.get("title"),
@@ -222,9 +201,23 @@ def insert_reviews(company_id, reviews):
             review.get("thumbs_up", 0),
             review.get("app_version"),
             scraped_at,
-            review_hash
-        ))
-        inserted += 1
+            hash_review(
+                review.get("reviewer_name"),
+                review.get("date"),
+                review.get("body"),
+            ),
+        )
+        for review in reviews
+    ]
+
+    cursor.executemany("""
+        INSERT OR IGNORE INTO reviews
+            (company_id, review_id, reviewer_name, rating, title, body,
+             review_date, thumbs_up, app_version, scraped_at, review_hash)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, rows)
+    inserted = cursor.rowcount
+    skipped = len(rows) - inserted
 
     conn.commit()
     conn.close()

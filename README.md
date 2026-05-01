@@ -6,6 +6,37 @@ This pipeline groups recurring complaints into issues, scores their severity, an
 
 Each run produces two reports: a markdown file for grep / diff / pasting into chat, and a self-contained HTML file with interactive sparklines and sortable tables.
 
+For a non-engineering overview of what the project does and what it found on Amazon, see [**SUMMARY.md**](SUMMARY.md). For a phase-by-phase retrospective of the engineering decisions and what I'd do differently, see [**DECISIONS.md**](DECISIONS.md).
+
+---
+
+## See the output
+
+Sample reports for all three currently-supported apps live in [`reports/showcase/`](reports/showcase/) — open the `.html` file in any browser to see the interactive version, or read the `.md` if you'd rather grep the text.
+
+| App | Reviews | Markdown | HTML |
+|---|---:|---|---|
+| Amazon | 10,000 | [Amazon.md](reports/showcase/Amazon.md) | [Amazon.html](reports/showcase/Amazon.html) |
+| eBay | 10,000 | [eBay.md](reports/showcase/eBay.md) | [eBay.html](reports/showcase/eBay.html) |
+| Walmart | 10,000 | [Walmart.md](reports/showcase/Walmart.md) | [Walmart.html](reports/showcase/Walmart.html) |
+
+The Amazon report demonstrates the **Run Delta** layer comparing against a prior run; eBay and Walmart show the baseline-run rendering (no prior on file).
+
+### Tour of a report
+
+The above-the-fold of the Amazon HTML report:
+
+![Tour of a report](docs/tour-of-a-report.png)
+
+1. **Elevator pitch** — what the pipeline does in one sentence, no jargon.
+2. **Four-stat ribbon** — reviews · escalating · new · resolved.
+3. **Run-summary narrative** — auto-generated single sentence describing the run's shape.
+4. **Key Takeaways** — 3–5 LLM-synthesized actionable bullets that cite specific issues and numbers.
+5. **Run Delta** — what changed since the prior run (escalating / improving / new / resolved buckets).
+6. **Priority Issues leaderboard** — top negative clusters with ▲ / ▼ / ✦ / — trend arrows.
+
+Below the fold, top-3 issue cards expand by default; the rest collapse behind a `<details>` toggle. The "Detailed analysis" divider signals the supporting evidence.
+
 ---
 
 ## Development history
